@@ -1,0 +1,3 @@
+# ignore everything, then include specific folders
+*
+!_build/html/

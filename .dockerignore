@@ -1,0 +1,11 @@
+# Exclude by default
+
+*
+
+# Include specific files & folders
+
+!setup.py
+!setup.cfg
+!version.txt
+!lmchallenge/*
+*.pyc

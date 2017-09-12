@@ -1,0 +1,56 @@
+<html>
+  <head>
+    <title>LMC Viewer</title>
+
+    <style>
+${BOOTSTRAP_CSS}
+    </style>
+    <style>
+${LMC_CSS}
+    </style>
+
+  </head>
+  <body>
+    <div class="container-fluid">
+      <div class="row">
+        <div class="col-md-12">
+          <h1>LMC Viewer</h1>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-4">
+          <div class="checkbox">
+            <label>
+              <input class="annotations" type="checkbox">Side-by-side</input>
+            </label>
+          </div>
+          <div class="results"></div>
+          <pre class="opt-settings"></pre>
+          <div class="detail"></div>
+        </div>
+
+        <div class="col-md-8">
+          <div class="pretty"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <script type="text/javascript">
+${JQUERY_JS}
+    </script>
+    <script type="text/javascript">
+${BOOTSTRAP_JS}
+    </script>
+    <script type="text/javascript">
+${D3_JS}
+    </script>
+    <script type="text/javascript">
+${LMC_JS}
+    </script>
+    <script type="text/javascript">
+${LMC_SETUP}
+    </script>
+  </body>
+</html>

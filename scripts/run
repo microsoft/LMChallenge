@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+
+import argparse
+import subprocess
+import string
+import os
+import time
+
+
+def sh(cmd, **args):
+    code = subprocess.call(string.Template(cmd).substitute(**args),
+                           shell=True)
+    if code != 0:
+        exit(code)
+
+
+def image_tag(image):
+    return dict(prod='lmchallenge',
+                dev='lmchallenge-dev').get(image, image)
+
+
+def build(args):
+    '''Build or pull the Docker image, which may be:
+    "prod" -- build the production image
+    "dev"  -- build the development image
+    "other/name" -- pull a remote image
+    '''
+    if args.image in ['prod', 'dev']:
+        # dev depends on prod, so we must build this first
+        sh('docker build --rm -t lmchallenge .')
+        if args.image == 'dev':
+            sh('docker build --rm -t lmchallenge-dev scripts/')
+    else:
+        sh('docker pull %s' % args.image)
+
+
+def run(args):
+    'Run an arbitrary command.'
+    sh('docker run --rm -i -v ${WORK}:/work -w /work'
+       ' -v /var/run/docker.sock:/var/run/docker.sock'
+       ' ${TAG} ${CMD}',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image),
+       CMD=' '.join(args.command))
+
+
+def test(args):
+    'Run unit & functional tests.'
+    sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
+       ' python3 setup.py test',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image))
+
+
+def flake(args):
+    'Run style checker.'
+    sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
+       ' flake8',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image))
+
+
+def doc(args):
+    'Generatic documentation.'
+    sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
+       ' make -C doc clean html',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image))
+
+
+def notebook(args):
+    'Start a notebook server with LMC loaded.'
+    if args.restart:
+        try:
+            sh('docker rm -f ${NAME}', NAME=args.name)
+        except subprocess.CalledProcessError:
+            # This command is allowed to fail (e.g. not running already)
+            pass
+
+    sh('docker run -d -v ${WORK}:/work -w /work'
+       ' --name ${NAME} -p ${PORT}:${PORT} ${TAG}'
+       ' sh -c "jupyter notebook --port ${PORT} --ip \'*\'"',
+       WORK=os.getcwd(),
+       NAME=args.name,
+       PORT=args.port,
+       TAG=image_tag(args.image))
+
+    time.sleep(1)
+
+    sh('docker logs ${NAME}', NAME=args.name)
+
+
+parser = argparse.ArgumentParser(
+    description='Builder, runner, tester for lmchallenge development',
+)
+parser.add_argument('-i', '--image',
+                    help='Which image to use: "prod" | "dev" | "other/name"',
+                    type=str, default='dev')
+
+subparsers = parser.add_subparsers()
+
+parser_build = subparsers.add_parser('build', help=build.__doc__)
+parser_build.set_defaults(action=build)
+
+parser_run = subparsers.add_parser('run', help=run.__doc__)
+parser_run.set_defaults(action=run)
+parser_run.add_argument('command', nargs='*')
+
+parser_test = subparsers.add_parser('test', help=test.__doc__)
+parser_test.set_defaults(action=test)
+
+parser_flake = subparsers.add_parser('flake', help=flake.__doc__)
+parser_flake.set_defaults(action=flake)
+
+parser_doc = subparsers.add_parser('doc', help=doc.__doc__)
+parser_doc.set_defaults(action=doc)
+
+parser_notebook = subparsers.add_parser('notebook', help=notebook.__doc__)
+parser_notebook.set_defaults(action=notebook)
+parser_notebook.add_argument('-n', '--name',
+                             help='Notebook container name',
+                             default='lmchallenge-notebook')
+parser_notebook.add_argument('-r', '--restart',
+                             help='Stop & restart the notebook',
+                             action='store_true')
+parser_notebook.add_argument('-p', '--port', help='Which port to use',
+                             default=8888)
+
+args = parser.parse_args()
+args.action(args)
