@@ -5,8 +5,6 @@
 # sphinx-quickstart on Thu Oct 29 11:11:46 2015.
 
 import sys
-import os
-import shlex
 import recommonmark.parser
 
 sys.path.insert(0, '..')
@@ -27,8 +25,8 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'LMChallenge'
-copyright = '2015, SwiftKey'
-author = 'SwiftKey'
+copyright = 'Microsoft Corporation'
+author = 'Microsoft Corporation'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -49,6 +47,4 @@ htmlhelp_basename = 'LMChallengedoc'
 # (source start file, name, description, authors, manual section).
 man_pages = [
     (master_doc, 'lmchallenge', 'LMChallenge Documentation', [author], 1),
-    ('wp', 'lmchallenge.wp', 'LMChallenge Word Prediction Documentation', [author], 1),
-    ('tc', 'lmchallenge.tc', 'LMChallenge Word Prediction Documentation', [author], 1),
 ]
