@@ -4,6 +4,7 @@ RUN pip3 install --upgrade                \
     coveralls                             \
     Faker                                 \
     flake8                                \
+    flake8-copyright                      \
     jupyter                               \
     matplotlib                            \
     numpy                                 \

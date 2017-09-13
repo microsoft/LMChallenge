@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 '''Utility for rendering an interactive HTML results page from ``ic``
 (``wp`` and ``tc`` to follow).
 '''

@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
+#
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+#
 
 import argparse
 import subprocess
 import string
 import os
 import time
+import sys
+import itertools as it
 
 
 def sh(cmd, **args):
@@ -60,6 +66,40 @@ def flake(args):
        TAG=image_tag(args.image))
 
 
+COPYRIGHT_NOTICE = [
+    '# Copyright (c) Microsoft Corporation. All rights reserved.',
+    '# Licensed under the MIT license.'
+]
+
+
+def copyright(args):
+    'Check for copyright headers.'
+    errors = 0
+    for root, _, files in os.walk('lmchallenge'):
+        for name in (f for f in files if os.path.splitext(f)[-1] == '.py'):
+            path = os.path.join(root, name)
+            # Strict verbatim test - the file must start with these lines
+            with open(path) as f:
+                lines = list(l.rstrip('\n') for l in it.islice(f, 2))
+            if lines != COPYRIGHT_NOTICE:
+                sys.stderr.write(
+                    ('Error! Bad copyright notice in {}:'
+                     '   {}\n').format(
+                         path,
+                         '\\n'.join(lines)
+                    ))
+                errors += 1
+    if errors:
+        exit(errors)
+
+
+def check(args):
+    'Run tests & static analysis.'
+    test(args)
+    flake(args)
+    copyright(args)
+
+
 def doc(args):
     'Generatic documentation.'
     sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
@@ -99,32 +139,38 @@ parser.add_argument('-i', '--image',
 
 subparsers = parser.add_subparsers()
 
-parser_build = subparsers.add_parser('build', help=build.__doc__)
-parser_build.set_defaults(action=build)
+sparser = subparsers.add_parser('build', help=build.__doc__)
+sparser.set_defaults(action=build)
 
-parser_run = subparsers.add_parser('run', help=run.__doc__)
-parser_run.set_defaults(action=run)
-parser_run.add_argument('command', nargs='*')
+sparser = subparsers.add_parser('run', help=run.__doc__)
+sparser.add_argument('command', nargs='*')
+sparser.set_defaults(action=run)
 
-parser_test = subparsers.add_parser('test', help=test.__doc__)
-parser_test.set_defaults(action=test)
+sparser = subparsers.add_parser('test', help=test.__doc__)
+sparser.set_defaults(action=test)
 
-parser_flake = subparsers.add_parser('flake', help=flake.__doc__)
-parser_flake.set_defaults(action=flake)
+sparser = subparsers.add_parser('flake', help=flake.__doc__)
+sparser.set_defaults(action=flake)
 
-parser_doc = subparsers.add_parser('doc', help=doc.__doc__)
-parser_doc.set_defaults(action=doc)
+sparser = subparsers.add_parser('check', help=check.__doc__)
+sparser.set_defaults(action=check)
 
-parser_notebook = subparsers.add_parser('notebook', help=notebook.__doc__)
-parser_notebook.set_defaults(action=notebook)
-parser_notebook.add_argument('-n', '--name',
-                             help='Notebook container name',
-                             default='lmchallenge-notebook')
-parser_notebook.add_argument('-r', '--restart',
-                             help='Stop & restart the notebook',
-                             action='store_true')
-parser_notebook.add_argument('-p', '--port', help='Which port to use',
-                             default=8888)
+sparser = subparsers.add_parser('doc', help=doc.__doc__)
+sparser.set_defaults(action=doc)
+
+sparser = subparsers.add_parser('copyright', help=copyright.__doc__)
+sparser.set_defaults(action=copyright)
+
+sparser = subparsers.add_parser('notebook', help=notebook.__doc__)
+sparser.add_argument('-n', '--name',
+                     help='Notebook container name',
+                     default='lmchallenge-notebook')
+sparser.add_argument('-r', '--restart',
+                     help='Stop & restart the notebook',
+                     action='store_true')
+sparser.add_argument('-p', '--port', help='Which port to use',
+                     default=8888)
+sparser.set_defaults(action=notebook)
 
 args = parser.parse_args()
 args.action(args)

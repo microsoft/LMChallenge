@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 '''Script to optimize the mixing parameters for an ``ic`` log file.
 (For the Python API, see ``lmchallenge.stats``.)
 '''

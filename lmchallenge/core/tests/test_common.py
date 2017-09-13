@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 from .. import common
 from nose.tools import assert_equal, assert_raises
 import emoji

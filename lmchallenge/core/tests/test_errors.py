@@ -1,3 +1,6 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT license.
+
 from .. import errors
 from nose.tools import eq_, assert_less, assert_less_equal
 from unittest.mock import MagicMock
