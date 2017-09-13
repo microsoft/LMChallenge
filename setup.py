@@ -5,8 +5,13 @@ with open('version.txt', 'r') as v:
 
 setup(name='lmchallenge',
       version=version,
-      description='LM Challenge - language modelling evaluation suite',
-      url='https://github.com/TouchType/LMChallenge',
+      description='LM Challenge'
+      ' - A library & tools to evaluate predictive language models.',
+      url='https://github.com/Microsoft/LMChallenge',
+      author='Microsoft Corporation',
+      author_email='swiftkey-deep@service.microsoft.com',
+      license='MIT',
+
       packages=['lmchallenge', 'lmchallenge.core'],
       install_requires=[
           'click',
