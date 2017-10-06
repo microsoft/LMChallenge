@@ -1,4 +1,4 @@
-# LM Challenge
+# Language Model Challenge (LMChallenge)
 
 A set of tools to evaluate language models for typing.
 
