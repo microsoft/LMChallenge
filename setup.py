@@ -3,10 +3,15 @@ from setuptools import setup
 with open('version.txt', 'r') as v:
     version = v.readline().strip()
 
+with open('README.md', 'r') as r:
+    readme = r.read()
+
 setup(name='lmchallenge',
       version=version,
       description='LM Challenge'
       ' - A library & tools to evaluate predictive language models.',
+      long_description=readme,
+
       url='https://github.com/Microsoft/LMChallenge',
       author='Microsoft Corporation',
       author_email='swiftkey-deep@service.microsoft.com',
@@ -21,7 +26,6 @@ setup(name='lmchallenge',
       tests_require=[
           'nose',
       ],
-      package_data={'lmchallenge': ['data/*']},
       test_suite='nose.collector',
       entry_points='''
       [console_scripts]

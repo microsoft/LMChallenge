@@ -20,14 +20,16 @@ These are currently very much incomplete (please help fix this), but they are ru
 
     ./scripts/run build
     ./scripts/run -i prod test
-    ./scripts/run flake
+    ./scripts/run check
 
 ## Publishing
 
- 1. check that you're happy with `version.txt`
- 2. `python3 setup.py bdist_wheel upload -r internal`
- 3. `git push origin HEAD:refs/tags/$(cat version.txt)`
- 4. update, commit & push `version.txt`
+ 1. ensure you've run the pre-publish checks `./scripts/run check`
+ 2. check that you're happy with `version.txt`
+ 3. `python3 setup.py sdist upload -r pypi`
+   - you must first set up pypi & GPG credentials
+ 4. `git push origin HEAD:refs/tags/$(cat version.txt)`
+ 5. update, commit & push `version.txt`
 
 ## Documentation
 
