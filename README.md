@@ -1,4 +1,5 @@
 # Language Model Challenge (LMChallenge)
+[![Build Status](https://travis-ci.com/Microsoft/LMChallenge.svg?token=PsuQKRDL8Qs6yfLsqpTp&branch=master)](https://travis-ci.com/Microsoft/LMChallenge)
 
 A set of tools to evaluate language models for typing.
 
