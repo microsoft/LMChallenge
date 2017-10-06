@@ -8,4 +8,4 @@ before_install:
 
 script:
   - ./scripts/run --image prod test
-  - ./scripts/run flake
+  - ./scripts/run check
