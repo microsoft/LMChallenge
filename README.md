@@ -14,11 +14,13 @@ It is really quite hard to test language model performance. Some models output p
 
 ## Getting Started
 
-We include support for building a Docker image that makes it easier to get started (which also documents [our dependencies](Dockerfile), in case you want to get set up natively).
+Install LMChallenge from the published Python package:
 
-```bash
-docker build --rm -t lmchallenge .
-```
+    pip3 install --user lmchallenge
+
+Or from this repository:
+
+    python3 setup.py install --user
 
 ## The Challenges
 

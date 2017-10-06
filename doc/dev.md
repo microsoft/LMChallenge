@@ -14,24 +14,17 @@ This project has adopted the [Microsoft Open Source Code of Conduct](https://ope
 For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
 contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Tests
+## Developing & testing
 
-These are currently very much incomplete (please help fix this), but they are run with:
+We include support for building a Docker image that makes it easier to get started (which also documents [our dependencies](Dockerfile), in case you want to get set up natively).
+
+Tests are currently very much incomplete (please help fix this), but they are run with:
 
     ./scripts/run build
     ./scripts/run -i prod test
     ./scripts/run check
 
-## Publishing
-
- 1. ensure you've run the pre-publish checks `./scripts/run check`
- 2. check that you're happy with `version.txt`
- 3. `python3 setup.py sdist upload -r pypi`
-   - you must first set up pypi & GPG credentials
- 4. `git push origin HEAD:refs/tags/$(cat version.txt)`
- 5. update, commit & push `version.txt`
-
-## Documentation
+### Documentation
 
 You can build the documentation with the development Docker image.
 
@@ -49,6 +42,16 @@ For now, we don't use an internal registry, but you can send things around manua
     docker save lmchallenge-doc:3.0 | gzip -c > lmchallenge-doc.tar.gz
     scp lmchallenge-doc.tar.gz ...
     gzip -cd lmchallenge-doc.tar.gz | docker load
+
+### Publishing
+
+ 1. ensure you've run the pre-publish checks `./scripts/run check`
+ 2. check that you're happy with `version.txt`
+ 3. `python3 setup.py sdist upload -r pypi`
+   - you must first set up pypi & GPG credentials
+ 4. `git push origin HEAD:refs/tags/$(cat version.txt)`
+ 5. update, commit & push `version.txt`
+
 
 ## Ideas
 
