@@ -1,0 +1,14 @@
+PASSWORD=sha1:e11c38c0d826:0e92488a9dcfe8e4bc71d5919ab72d5b46869187
+NAME=lmc-notebook
+WORK=/home/jovyan/work
+
+docker rm -f "${NAME}"
+docker run -d --name "${NAME}"  \
+       -p 8888:8888             \
+       -v `pwd`:"${WORK}" -w "${WORK}" -e "PYTHONPATH=${WORK}" \
+       jupyter/scipy-notebook   \
+       start-notebook.sh        \
+       --NotebookApp.password="${PASSWORD}"
+
+echo "notebook: http://localhost:8888"
+echo "password: lmc"

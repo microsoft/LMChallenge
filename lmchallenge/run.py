@@ -26,13 +26,12 @@ class Wp:
         for m in common.TOKENIZER.finditer(line):
             start, end = m.span()
             target = m.group()
-            yield line[:start], target
+            yield start, line[:start], target
 
     def __call__(self, model, line):
         '''Return a stats object for a single line of wp evaluation.
         '''
-        result = []
-        for context, target in Wp.contexts_and_targets(line):
+        for start, context, target in Wp.contexts_and_targets(line):
             word_result = {}
             if self.targets:
                 word_result['target'] = target
@@ -53,9 +52,9 @@ class Wp:
                 )
                 word_result['score'] = target_score
 
-            result.append(word_result)
-
-        return {'wordPredictions': result}
+            yield dict(target=target,
+                       rank=word_result.get('rank'),
+                       offset=start)
 
 
 class Tc:
@@ -191,9 +190,13 @@ def run(model, task, data, train=False):
         data, lambda line: line.get('userId')
     )
     for user_id, user_lines in lines_by_user:
+        event = 0
+        message = 0
         if train:
             model.clear()
             training_chars = 0
+        else:
+            training_chars = None
 
         lines_by_time = itertools.groupby(
             user_lines, lambda line: line.get('timestamp', object())
@@ -201,16 +204,19 @@ def run(model, task, data, train=False):
         for timestamp, same_timestamp_lines in lines_by_time:
             training_buffer = []
             for row in same_timestamp_lines:
-                result_row = row.copy()
-                text = result_row.pop('text')
-                result_row.update(task(model, text))
+                for result in task(model, row['text']):
+                    # if 'userId' in row:
+                    result['user'] = row.get('userId')
+                    # if train:
+                    result['trained'] = training_chars
+                    training_buffer.append(row['text'])
+                    result['event'] = event
+                    result['message'] = message
+                    yield result
+                    event += 1
+            message += 1
 
-                if train:
-                    training_buffer.append(text)
-                    result_row['trainingChars'] = training_chars
-
-                yield result_row
-
+            # TODO - do we need this???
             # When multiple lines of text have the same timestamp
             # (e.g. if they came from the same UsageFragment and we
             # don't know the original order they occurred in), we
@@ -219,7 +225,7 @@ def run(model, task, data, train=False):
             if train:
                 for line in training_buffer:
                     model.train(line)
-                    training_chars += len(text)
+                    training_chars += len(line)
 
 
 class InputFormat(common.ParamChoice):
