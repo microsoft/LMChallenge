@@ -1,0 +1,8 @@
+FROM jupyter/scipy-notebook
+
+USER root
+ADD . /home/jovyan/lmchallenge
+RUN cd /home/jovyan/lmchallenge \
+    && python3 setup.py install
+
+USER jovyan

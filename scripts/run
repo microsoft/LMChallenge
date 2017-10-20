@@ -21,7 +21,8 @@ def sh(cmd, **args):
 
 
 def image_tag(image):
-    return dict(prod='lmchallenge',
+    return dict(prod='lmchallegne',
+                notebook='lmchallenge-notebook',
                 dev='lmchallenge-dev').get(image, image)
 
 
@@ -35,7 +36,9 @@ def build(args):
         # dev depends on prod, so we must build this first
         sh('docker build --rm -t lmchallenge .')
         if args.image == 'dev':
-            sh('docker build --rm -t lmchallenge-dev scripts/')
+            sh('docker build --rm -t lmchallenge-dev -f scripts/Dockerfile.dev .')
+    elif args.image == 'notebook':
+        sh('docker build --rm -t lmchallenge-notebook -f scripts/Dockerfile.notebook .')
     else:
         sh('docker pull %s' % args.image)
 
@@ -98,6 +101,7 @@ def check(args):
     test(args)
     flake(args)
     copyright(args)
+    sys.stderr.write('*** All Checks passed ***\n')
 
 
 def doc(args):
@@ -111,32 +115,36 @@ def doc(args):
 def notebook(args):
     'Start a notebook server with LMC loaded.'
     if args.restart:
-        try:
-            sh('docker rm -f ${NAME}', NAME=args.name)
-        except subprocess.CalledProcessError:
-            # This command is allowed to fail (e.g. not running already)
-            pass
+        # Ignore failures e.g. not running already
+        sh('docker rm -f ${NAME} || true', NAME=args.name)
+
+    # IPython.lib.passwd(passphrase='lmc')
+    password = 'sha1:d9c0350bce66:7ab513830b9a6688ed423c65f486c8d08b13718c'
 
     sh('docker run -d -v ${WORK}:/work -w /work'
        ' --name ${NAME} -p ${PORT}:${PORT} ${TAG}'
-       ' sh -c "jupyter notebook --port ${PORT} --ip \'*\'"',
+       ' sh -c "jupyter notebook --allow-root'
+       ' --port ${PORT} --ip \'*\''
+       ' --NotebookApp.password=\'${PASSWORD}\'"',
        WORK=os.getcwd(),
        NAME=args.name,
+       PASSWORD=password,
        PORT=args.port,
        TAG=image_tag(args.image))
 
-    time.sleep(1)
-
-    sh('docker logs ${NAME}', NAME=args.name)
+    sys.stderr.write('  Server: http://localhost:{}\n'.format(args.port))
+    sys.stderr.write('Password: lmc\n')
 
 
 parser = argparse.ArgumentParser(
     description='Builder, runner, tester for lmchallenge development',
 )
-parser.add_argument('-i', '--image',
-                    help='Which image to use: "prod" | "dev" | "other/name"',
-                    type=str, default='dev')
-
+parser.add_argument(
+    '-i', '--image',
+    help='Which image to use: "prod" | "dev" | "notebook" | "other/name"',
+    type=str,
+    default='dev'
+)
 subparsers = parser.add_subparsers()
 
 sparser = subparsers.add_parser('build', help=build.__doc__)
