@@ -42,11 +42,11 @@ def test_corrupt_fuzz():
 
 
 def test_search():
-    eq_(errors.Search([], 3)("csn"), [])
-    eq_(errors.Search(["can", "cs", "dam", "csn", "csna"], 3)("csn"),
+    eq_(errors.Search([])("csn", 3), [])
+    eq_(errors.Search(["can", "cs", "dam", "csn", "csna"])("csn", 3),
         ["csn", "can", "dam"])
     # if there is a tie, the first result in the list should be retained
-    eq_(errors.Search(["baa", "bba", "aba", "aab", "aaa", "caa"], 3)("aaa"),
+    eq_(errors.Search(["baa", "bba", "aba", "aab", "aaa", "caa"])("aaa", 3),
         ["aaa", "baa", "aba"])
 
 
@@ -57,12 +57,12 @@ def test_search_fuzz():
         "birr", "bord", "birt", "Gird", "birs", "birh", "find", "died", "bill",
         "hard", "fire"
     ]
-    search = errors.Search(words, 5)
+    search = errors.Search(words)
     config = errors.DEFAULT_CONFIG
     for word in words:
         for _ in range(10):
             corrupt = errors.corrupt(config, word)
-            top = search(corrupt)
+            top = search(corrupt, 5)
             last_top_score = errors.score(config, corrupt, top[-1])
 
             for w in words:

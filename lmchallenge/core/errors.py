@@ -43,7 +43,7 @@ def score(config, input_word, word):
 class Search:
     """Functor for finding a list of nearby candidates to a corrupted word.
     """
-    def __init__(self, words, n):
+    def __init__(self, words):
         self.words = {}
         for w in words:
             words_l = self.words.get(len(w))
@@ -51,7 +51,6 @@ class Search:
                 words_l = []
                 self.words[len(w)] = words_l
             words_l.append(w)
-        self.n = n
 
     @staticmethod
     def _count_matches(a, b):
@@ -61,8 +60,8 @@ class Search:
                 n += 1
         return n
 
-    def __call__(self, input_word):
+    def __call__(self, input_word, n):
         return heapq.nlargest(
-            self.n, self.words.get(len(input_word), []),
+            n, self.words.get(len(input_word), []),
             key=lambda w: Search._count_matches(input_word, w)
         )

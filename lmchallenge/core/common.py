@@ -10,15 +10,21 @@ import emoji
 import logging
 import json
 import itertools
-import warnings
 import importlib
 import itertools as it
 
-TOKENIZER = regex.compile(
+
+WORD_TOKENIZER = regex.compile(
     emoji.get_emoji_regexp().pattern +
     """|[\p{L}\p{N}\p{Pc}\p{Pd}'@#]+|[\p{P}\p{S}]+"""
 )
 '''Our basic word tokenizer regex.'''
+
+
+CHARACTER_TOKENIZER = regex.compile(
+    '.'
+)
+'''A Unicode character tokenizer regex.'''
 
 
 def shell_docstring(command, name):
@@ -197,14 +203,6 @@ class TokenFilter(ParamChoice):
     name = 'token_filter'
     choices = ['all', 'nospace', 'nomarker',
                'alpha', 'alphaonly', 'alphaemoji', 'emoji']
-
-
-# deprecated & included for legacy API compatibility reasons
-def token_filter(name):
-    '''Deprecated & included for legacy API compatibility reasons.
-    '''
-    warnings.warn('deprecated', DeprecationWarning)
-    return TokenFilter().convert(name, None, None)
 
 
 def qualified_name(x):

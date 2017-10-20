@@ -28,9 +28,11 @@ def test_zip_special():
         common.zip_special("abcd", [1, 2, 3])
 
 
-def test_tokenizer():
+def test_word_tokenizer():
     def tokenize(x):
-        return [m.group(0) for m in common.TOKENIZER.finditer(x)]
+        return [m.group(0) for m in common.WORD_TOKENIZER.finditer(x)]
+
+    assert_equal([], tokenize(''))
 
     assert_equal(["one", "two", "@DIGITS", "#What_you're_like@home"],
                  tokenize("one two \n\t@DIGITS #What_you're_like@home"))
@@ -43,6 +45,16 @@ def test_tokenizer():
 
     for emo in emoji.UNICODE_EMOJI.keys():
         assert_equal(["pre", emo, "post"], tokenize("pre {} post".format(emo)))
+
+
+def test_character_tokenizer():
+    def tokenize(x):
+        return [m.group(0) for m in common.CHARACTER_TOKENIZER.finditer(x)]
+
+    assert_equal([], tokenize(''))
+
+    assert_equal(['1', '\t', '2', '#', '😀'],
+                 tokenize('1\t2#😀'))
 
 
 class Foo:
