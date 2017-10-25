@@ -50,7 +50,7 @@ def get_completions(model, context, target):
         yield [c[0] for c in model.predict(context + target[:i], None)]
 
 
-def get_cost(model, context, target):
+def get_logp(model, context, target):
     '''Wrap the model.predict API to query the score of a single target.
     '''
     results = list(model.predict(context, [target]))
@@ -92,7 +92,7 @@ def evaluate_completions(model, context, target, next_word_only):
 def evaluate_entropy(model, context, target):
     '''Evaluator for Word/Character Entropy.
     '''
-    return dict(cost=get_cost(model=model, context=context, target=target))
+    return dict(logp=get_logp(model=model, context=context, target=target))
 
 
 def evaluate_reranking(model, context, target,
@@ -157,15 +157,15 @@ def run_tokens(model, data, train, tokenizer, evaluate):
         character -- int -- index of character within the message
         target -- string -- token being typed
     '''
-    data_by_user = it.groupby(data, lambda x: x.get('user', object()))
-    for _, messages in data_by_user:
+    data_by_user = it.groupby(data, lambda x: x.get('user'))
+    for user, messages in data_by_user:
         if train:
             model.clear()
         for message_n, message in enumerate(messages):
             for token in find_tokens(text=message['text'],
                                      tokenizer=tokenizer):
                 yield dict(
-                    user=message.get('user'),
+                    user=user,
                     message=message_n,
                     **evaluate(
                         model=model,
@@ -256,6 +256,8 @@ class InputFormat(common.ParamChoice):
 
 @click.group()
 @click.argument('predictor', type=PredictorSpec())
+@click.option('-v', '--verbose', default=0, count=True,
+              help='How much human-readable detail to print to STDERR.')
 @click.option('-t', '--train/--no-train', default=False,
               help='Train the model on lines of text after predictions have'
               ' been given for them (and any others with the same timestamp),'
@@ -278,7 +280,7 @@ class InputFormat(common.ParamChoice):
               ' "positional": ["hello", "world"]}\' will be passed as'
               ' `<cmd> hello world -n 10 --abc 123`.')
 @click.pass_context
-def cli(ctx, predictor, train, format, options):
+def cli(ctx, verbose, predictor, train, format, options):
     '''Run a challenge for a predictor over some test text.
     Pipe in text to record an evaluation run of a pipeable predictor, on a
     language modelling task.
@@ -291,6 +293,8 @@ def cli(ctx, predictor, train, format, options):
     or the qualified name of a Python class or function
     e.g. "mymodule.MyClass".
     '''
+    common.verbosity(verbose)
+
     def _runner(tokenizer, evaluate):
         with predictor(options) as model:
             dump_jsonl(run_tokens(

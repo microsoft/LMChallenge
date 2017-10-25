@@ -5,7 +5,7 @@
 '''
 
 import click
-from . import run, stats, pretty, ic_opt, page
+from . import run, stats, pretty, page
 
 
 @click.group()
@@ -19,5 +19,4 @@ def cli():
 cli.add_command(run.cli, 'run')
 cli.add_command(stats.cli, 'stats')
 cli.add_command(pretty.cli, 'pretty')
-cli.add_command(ic_opt.cli, 'ic-opt')
 cli.add_command(page.cli, 'page')

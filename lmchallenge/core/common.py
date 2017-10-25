@@ -9,8 +9,8 @@ import click
 import emoji
 import logging
 import json
-import itertools
 import importlib
+import gzip
 import itertools as it
 
 
@@ -61,14 +61,35 @@ def fdiv_null(a, b):
     return None if b == 0 else float(a) / b
 
 
-def read_jsonlines(filename, nlines=None):
-    '''Read an entire stats file into memory, and return it as a list of
-    JSON objects.
+def open(filename):
+    '''Open a file, and return it (should be used in a ``with``).
+
+    filename -- string -- path to a file (or gzip)
+
+    returns -- file object -- performing gzip decoding if appopriate
     '''
-    with (sys.stdin if filename == '-' else open(filename, 'r')) as f:
-        return list(itertools.islice((json.loads(line.rstrip('\r\n'))
-                                      for line in f),
-                                     nlines))
+    if filename.endswith('.gz') or filename.endswith('.gzip'):
+        return gzip.open(filename, 'rt')
+    else:
+        return open(filename, 'r')
+
+
+def read_jsonlines(filename):
+    '''Generate json objects from a JSONlines file.
+
+    Note that this relies on the iterator being exhausted, or going out of
+    scope, in order to close the file.
+
+    filename -- string -- path to a file (jsonlines, or gzipped jsonlines),
+                          or "-" for stdin.
+    '''
+    f = sys.stdin if filename == '-' else open(filename)
+    try:
+        for line in f:
+            yield json.loads(line.rstrip('\r\n'))
+    finally:
+        if f is not sys.stdin:
+            f.close()
 
 
 def autodetect_log(data, wp, tc, ic):
@@ -107,6 +128,52 @@ def zip_special(a, b):
     else:
         raise ValueError("Length mismatch for zip_special: %d and %d"
                          % (len(a), len(b)))
+
+
+def flatten_keys(d, separator='.'):
+    '''Flatten a nested dictionary, using 'separator' to separate keys in the
+    result. For example:
+
+    {'id': {'name': 'James Bond', 'code': 0x07}, 'job': 'Spy'}
+      = flatten_keys =>
+    {'id.name': 'James Bond', 'id.code': 0x07, 'job: 'Spy'}
+    '''
+    result = {}
+
+    def flatten(d, prefix):
+        for k, v in d.items():
+            if isinstance(v, dict):
+                flatten(v, prefix + k + separator)
+            else:
+                result[prefix + k] = v
+    flatten(d, '')
+    return result
+
+
+def rank(items, item, max_rank=None):
+    '''Find the rank of 'item' in the list 'items',
+    returning None if the item is missing, where the first element is
+    considered rank=1.
+
+    returns -- a rank >= 1, or None if the item was not found
+    '''
+    try:
+        stop = max_rank if max_rank is not None else len(items)
+        return 1 + items.index(item, 0, stop)
+    except ValueError:
+        return None
+
+
+def sort_with_override(items, *first_items):
+    '''Sort a list, but move 'first_items' to the front in the given order.
+    '''
+    primary_order = {k: i for i, k in enumerate(first_items)}
+    # use a tuple (primary_order, item) as the sort value, which will
+    # move items matching primary_order to the front (as a major sort index)
+    return sorted(items, key=lambda item: (
+        primary_order.get(item, len(primary_order)),
+        item
+    ))
 
 
 class JsonParam(click.ParamType):
