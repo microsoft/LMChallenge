@@ -11,6 +11,7 @@ import logging
 import json
 import importlib
 import gzip
+import contextlib
 import itertools as it
 
 
@@ -61,14 +62,34 @@ def fdiv_null(a, b):
     return None if b == 0 else float(a) / b
 
 
+@contextlib.contextmanager
+def not_closing(f):
+    '''A context manager that doesn't call close on the resource.
+
+    For example, use this when you want to run:
+
+        with sys.stdin as f:
+            # do something with f, closes sys.stdin at the end
+
+    Instead, you can do:
+
+        with not_closing(sys.stdin) as f:
+           # do something with f, not closing sys.stdin at the end
+
+    '''
+    yield f
+
+
 def open(filename):
     '''Open a file, and return it (should be used in a ``with``).
 
-    filename -- string -- path to a file (or gzip)
+    filename -- string -- path to a file (or gzip), or "-" for stdin
 
     returns -- file object -- performing gzip decoding if appopriate
     '''
-    if filename.endswith('.gz') or filename.endswith('.gzip'):
+    if filename == '-':
+        return not_closing(sys.stdin)
+    elif filename.endswith('.gz') or filename.endswith('.gzip'):
         return gzip.open(filename, 'rt')
     else:
         return open(filename, 'r')
@@ -83,13 +104,9 @@ def read_jsonlines(filename):
     filename -- string -- path to a file (jsonlines, or gzipped jsonlines),
                           or "-" for stdin.
     '''
-    f = sys.stdin if filename == '-' else open(filename)
-    try:
+    with open(filename) as f:
         for line in f:
             yield json.loads(line.rstrip('\r\n'))
-    finally:
-        if f is not sys.stdin:
-            f.close()
 
 
 def autodetect_log(data, wp, tc, ic):
@@ -174,6 +191,25 @@ def sort_with_override(items, *first_items):
         primary_order.get(item, len(primary_order)),
         item
     ))
+
+
+def peek(iterable):
+    '''Get the first item out of an iterable, then reattach it, so you can
+    dispatch based on the first item, then process all items.
+
+    iterable -- an iterable or collection of items (of any type)
+
+    returns -- (first_item, iterable) -- a pair of the first item, and an
+               iterable containing all items (including the first)
+    '''
+    iterable = iter(iterable)
+    try:
+        first_item = next(iterable)
+        # rebuid an iterable of all items
+        all_items = it.chain([first_item], iterable)
+        return (first_item, all_items)
+    except StopIteration:
+        return (None, ())
 
 
 class JsonParam(click.ParamType):

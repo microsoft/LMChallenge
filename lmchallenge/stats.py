@@ -261,65 +261,66 @@ class Reranking(Accumulator):
     '''Optimize a reranking function, by loading all events into
     memory, and using scipy.
     '''
-    def __init__(self, model):
-        self._targets_error = []
-        self._targets_lm = []
-        self._others_error = []
-        self._others_lm = []
-        self._model = model
-
-    @classmethod
-    def create(cls, model=None):
-        return cls(model=model)
+    def __init__(self):
+        self._scores_error = []
+        self._scores_lm = []
 
     def update(self, datum):
         results = datum.get('results')
         if results is not None:
             target = datum['target']
+            self._scores_error.append(list(it.chain(
+                (e for t, e, lm in results if t == target),
+                (e for t, e, lm in results if t != target),
+            )))
+            self._scores_lm.append(list(it.chain(
+                (lm for t, e, lm in results if t == target),
+                (lm for t, e, lm in results if t != target),
+            )))
 
-            target_error, target_lm = \
-                next((e, lm) for t, e, lm in results if t == target)
-            self._targets_error.append(target_error)
-            self._targets_lm.append(target_lm)
-
-            other_error, other_lm = \
-                zip(*((e, lm) for t, e, lm in results if t != target))
-            self._others_error.append(other_error)
-            self._others_lm.append(other_lm)
+    def finalize(self):
+        '''Finalize the matrices & compute the optimal model.
+        '''
+        from .core import reranking as R
+        max_candidates = max(len(e) for e in self._scores_error)
+        self._error = R.jagged_matrix(self._scores_error, max_candidates)
+        self._lm = R.jagged_matrix(self._scores_lm, max_candidates)
+        self._model = R.InterpolationRerankingModel.optimize(
+            error=self._error,
+            lm=self._lm
+        )
 
     @property
     def state(self):
-        if len(self._others_error) == 0:
-            max_candidates = 0
-            already_correct = 0
-            correct = 0
-            args = None
+        if len(self._scores_error) == 0:
+            # Take an explicit branch to avoid the "import core.reranking"
+            # unless the reranking model is used (to keep the numpy/scipy
+            # dependency optional
+            return dict(
+                max_candidates=0,
+                already_correct=0,
+                correct=0,
+                args=None,
+            )
         else:
+            self.finalize()
             from .core import reranking as R
-            max_candidates = max(len(e) for e in self._others_error)
-            targets_error = R.replace_none_vector(self._targets_error)
-            others_error = R.jagged_matrix(self._others_error, max_candidates)
-            already_correct = R.count_correct(
-                targets_score=targets_error,
-                others_score=others_error,
+            return dict(
+                max_candidates=self._error.shape[1],
+                base_correct=R.count_correct(self._error),
+                correct=R.count_correct(self._model(self._error, self._lm)),
+                args=self._model.args,
             )
-            model = (self._model
-                     if self._model is not None else
-                     R.InterpolationRerankingModel())
-            correct, args = R.optimize_accuracy(
-                model=model,
-                targets_error=targets_error,
-                targets_lm=R.replace_none_vector(self._targets_lm),
-                others_error=others_error,
-                others_lm=R.jagged_matrix(self._others_lm,
-                                          max_candidates),
-            )
-        return dict(
-            max_candidates=max_candidates,
-            already_correct=already_correct,
-            correct=correct,
-            args=args,
-        )
+
+    @classmethod
+    def build_model(cls, data):
+        '''A helper to build a reranking model from data, using this class.
+        '''
+        a = cls.create()
+        for datum in data:
+            a.update(datum)
+        a.finalize()
+        return a._model
 
 
 class Composite(Accumulator):
@@ -468,7 +469,7 @@ def humanize(stats):
         reranking.pop('args')  # rarely used information
         r['reranking'] = dict(
             accuracy=reranking.pop('correct') / tokens,
-            base_accuracy=reranking.pop('already_correct') / tokens,
+            base_accuracy=reranking.pop('base_correct') / tokens,
             max_candidates=reranking.pop('max_candidates'),
         )
         assert len(reranking) == 0, 'Unexpected Reranking result keys'

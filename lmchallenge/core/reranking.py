@@ -8,59 +8,7 @@ import numpy as np
 import scipy.optimize
 
 
-class RerankingModel:
-    '''A model that is capable of combining error & language model scores
-    to rerank candidates (e.g. for the goal of optimizing combined ranking
-    accuracy).
-    '''
-    def guess(self, error, lm):
-        '''Return the initial guess at a good set of arguments.
-
-        error -- array[N; float] -- example error scores
-
-        lm -- array[N; float] -- example language model scores
-
-        returns -- a dictionary {"arg_name": initial_value}
-        '''
-        raise NotImplementedError
-
-    def __call__(self, error, lm, **args):
-        '''Evaluate the reranking model for the given error & LM scores.
-
-        error -- array[*; float] -- error scores (any shape permitted)
-
-        lm -- array[*; float] -- language model scores (any shape permitted,
-                                 but must match 'error')
-
-        args -- in the same format as 'guess'
-
-        returns -- array[*; float] -- combined scores from the model (same
-                                      shape as error & lm)
-        '''
-        raise NotImplementedError
-
-
-class InterpolationRerankingModel(RerankingModel):
-    '''Implements an interpolation-with-minimum combination model:
-
-        score = max(alpha * lm_score, beta) + (1 - alpha) * error_score
-
-    Hyperparameters:
-
-        alpha -- how much to trust the language model
-
-        beta -- the minimum contribution from the language model (e.g.
-                for protection against OOV)
-    '''
-    def guess(self, error, lm):
-        return dict(
-            alpha=0.5,
-            beta=0.5 * float(np.median(lm[lm != -np.inf])),
-        )
-
-    def __call__(self, error, lm, alpha, beta):
-        return np.maximum(alpha * lm, beta) + (1 - alpha) * error
-
+# Helpers
 
 def replace_none_vector(values):
     '''Convert 'values' to a vector, replacing None with -infinity.
@@ -85,50 +33,96 @@ def jagged_matrix(values, n):
     return result
 
 
-def count_correct(targets_score, others_score):
-    '''Compute number of correct (rank=1) scores for an vector of target scores,
-    against a matrix of "others" scores.
+def count_correct(scores):
+    '''Compute number of correct (rank=1) scores for a matrix of scores, where
+    the score of the intended "target" is at index 1 of each row.
 
     N.B. Uses greater-than rather than greater-than-or-equal,
     although this is possibly a bit harsh (you could have achieved
     the correct via some arbitrary tie-breaking function).
 
-    target_score -- array[N; float] -- scores of the desired target
-
-    others_score -- array[N, C; float] -- scores of other terms
+    scores -- array[N, C; float] -- scores of all terms, where scores[:, 0] are
+              the intended target's scores
 
     returns -- number of correct (rank=1) results, in the range [0, N]
     '''
-    return (targets_score > others_score.max(axis=1)).sum()
+    return int((scores[:, 0] > scores[:, 1:].max(axis=1)).sum())
 
 
-def optimize_accuracy(model, targets_error, targets_lm,
-                      others_error, others_lm):
-    '''Optimize a reranking model for Hit@1 disambiguation.
+# Reranking
 
-    returns -- (best_correct, best_model_args)
+class RerankingModel:
+    '''A model that is capable of combining error & language model scores
+    to rerank candidates (e.g. for the goal of optimizing combined ranking
+    accuracy).
     '''
-    guess = model.guess(
-        error=np.append(others_error, targets_error[:, np.newaxis], axis=1),
-        lm=np.append(others_lm, targets_lm[:, np.newaxis], axis=1),
-    )
-    arg_keys = guess.keys()
+    @classmethod
+    def guess(cls, error, lm):
+        '''Return the initial guess at a good set of arguments.
 
-    def to_args(argv):
-        return {k: v for k, v in zip(arg_keys, argv)}
+        error -- array[N; float] -- example error scores
 
-    def fn(argv):
-        args = to_args(argv)
-        return -count_correct(
-            targets_score=model(targets_error, targets_lm, **args),
-            others_score=model(others_error, others_lm, **args),
+        lm -- array[N; float] -- example language model scores
+
+        returns -- a dictionary {"arg_name": initial_value}
+        '''
+        raise NotImplementedError
+
+    def __init__(self, **args):
+        self.args = args
+        for k, v in args.items():
+            setattr(self, k, v)
+
+    def __call__(self, error, lm):
+        '''Evaluate the reranking model for the given error & LM scores.
+
+        error -- array[*; float] -- error scores (any shape permitted)
+
+        lm -- array[*; float] -- language model scores (any shape permitted,
+                                 but must match 'error')
+
+        returns -- array[*; float] -- combined scores from the model (same
+                                      shape as error & lm)
+        '''
+        raise NotImplementedError
+
+    @classmethod
+    def optimize(cls, error, lm):
+        '''Optimize a reranking model for Hit@1 disambiguation.
+
+        returns -- an optimized model instance
+        '''
+        guess = cls.guess(error=error, lm=lm)
+
+        def create(argv):
+            return cls(**{k: v for k, v in zip(guess.keys(), argv)})
+
+        return create(scipy.optimize.fmin(
+            lambda argv: -count_correct(create(argv)(error, lm)),
+            x0=list(guess.values()),
+            disp=False,
+        ))
+
+
+class InterpolationRerankingModel(RerankingModel):
+    '''Implements an interpolation-with-minimum combination model:
+
+        score = max(alpha * lm_score, beta) + (1 - alpha) * error_score
+
+    Hyperparameters:
+
+        alpha -- how much to trust the language model
+
+        beta -- the minimum contribution from the language model (e.g.
+                for protection against OOV)
+    '''
+    @classmethod
+    def guess(cls, error, lm):
+        return dict(
+            alpha=0.5,
+            beta=0.5 * float(np.median(lm[lm != -np.inf])),
         )
 
-    best_argv, best_neg_ncorrect, *_ = scipy.optimize.fmin(
-        fn,
-        x0=[guess[k] for k in arg_keys],
-        disp=False,
-        full_output=True,
-    )
-
-    return (-best_neg_ncorrect, to_args(best_argv))
+    def __call__(self, error, lm):
+        return (np.maximum(self.alpha * lm, self.beta) +
+                (1 - self.alpha) * error)

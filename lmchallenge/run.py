@@ -217,7 +217,7 @@ class InputFormat(common.ParamChoice):
     choices = ['auto', 'text', 'json']
 
     @staticmethod
-    def is_json(line):
+    def _is_json(line):
         try:
             # if you can parse it as JSON
             d = json.loads(line)
@@ -229,17 +229,13 @@ class InputFormat(common.ParamChoice):
 
     @classmethod
     def auto(cls, lines):
-        lines = iter(lines)
-        try:
-            first_line = next(lines)
-            # rebuid an iterable of all the lines
-            all_lines = it.chain([first_line], lines)
-            yield from (cls.json(all_lines)
-                        if cls.is_json(first_line) else
-                        cls.text(all_lines))
-        except StopIteration:
-            # An empty iterable, generate an empty sequence
+        first_line, lines = common.peek(lines)
+        if first_line is None:
             pass
+        elif cls._is_json(first_line):
+            yield from cls.json(lines)
+        else:
+            yield from cls.text(lines)
 
     @staticmethod
     def text(lines):

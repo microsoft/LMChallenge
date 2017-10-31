@@ -3,7 +3,40 @@
 
 from .. import common
 from nose.tools import assert_equal, assert_raises
+import itertools as it
 import emoji
+import io
+
+
+def test_not_closing():
+    s = io.StringIO()
+    assert not s.closed
+
+    with common.not_closing(s) as f:
+        f.write('hello')
+    assert not s.closed
+
+    # If you don't wrap in "not_closing" the with statement will
+    # close the resource
+    with s as f:
+        f.write(' again')
+        # You can't do this after it is closed
+        assert f.getvalue() == 'hello again'
+    assert f.closed
+
+
+def test_peek():
+    x, items = common.peek('abcdef')
+    assert x == 'a'
+    assert (''.join(items)) == 'abcdef'
+
+    x, items = common.peek(it.count())
+    assert x == 0
+    assert list(it.islice(items, 4)) == [0, 1, 2, 3]
+
+    x, items = common.peek([])
+    assert x is None
+    assert list(items) == []
 
 
 def test_zip_special():
