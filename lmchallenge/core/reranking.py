@@ -124,5 +124,15 @@ class InterpolationRerankingModel(RerankingModel):
         )
 
     def __call__(self, error, lm):
-        return (np.maximum(self.alpha * lm, self.beta) +
-                (1 - self.alpha) * error)
+        return (
+            (1 - self.alpha) * error +
+            np.maximum(self.alpha * (lm if lm is not None else float('-inf')),
+                       self.beta)
+        )
+
+    def __str__(self):
+        return 'score = {:.3g} * error + max({:.3g} * lm, {:.3g})'.format(
+            1 - self.alpha,
+            self.alpha,
+            self.beta,
+        )

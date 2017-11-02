@@ -10,6 +10,9 @@
     color: #202020;
 }
 
+.filtered {
+    color: #0000a0;
+}
 .uncorrected {
     color: #ff8000;
 }

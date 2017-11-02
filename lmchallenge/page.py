@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Utility for rendering an interactive HTML results page from ``ic``
-(``wp`` and ``tc`` to follow).
+'''Utility for rendering an interactive HTML results page from ``wr``
+(``{wc, we, ce}`` to follow).
 '''
 
 import click
@@ -60,8 +60,8 @@ def _get_files():
     #   wget https://URL -O - | sha384sum
     return dict(
         PAGE=_read_data_file('page.html'),
-        LMC_CSS=_read_data_file('ic.css'),
-        LMC_JS=_read_data_file('ic.js'),
+        LMC_CSS=_read_data_file('lmc.css'),
+        LMC_JS=_read_data_file('lmc.js'),
         BOOTSTRAP_CSS=_download_cache_cdn(
             'https://'
             'maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css',
@@ -90,6 +90,7 @@ def _get_files():
 def _json_dumps_min(data, float_format=''):
     '''Tiny JSON serializer that supports strings, ints, floats, lists
     and dictionaries.
+
     Compared to json.dumps, allows a format to specified for floating point
     values.
     '''
@@ -100,6 +101,8 @@ def _json_dumps_min(data, float_format=''):
             out.write('null')
         elif isinstance(node, str):
             out.write(json.dumps(node))
+        elif isinstance(node, bool):
+            out.write('true' if node else 'false')
         elif isinstance(node, int):
             out.write(str(node))
         elif isinstance(node, float):
@@ -120,58 +123,65 @@ def _json_dumps_min(data, float_format=''):
                 out.write(':')
                 visit(node[k])
             out.write('}')
+        else:
+            raise ValueError(
+                'Unexpected value for JSON conversion: {}'.format(node))
     visit(data)
     return out.getvalue()
 
 
-def _process_ic_log(log, opt):
-    '''Prepare the IC log for reading with the JS script ic.js.
+def _process_wr_log(data, filter, model):
+    '''Prepare the word reranking log for reading with the JS script lmc.js.
 
-    Input format: IC log format - list of line results.
+    Input format: WR log format.
 
     Output format:
-      - note that we use abbreviated keys so that the rendered page is small.
-        - "t" = "target"
-        - "v" = "verbatim"
-        - "r" = "results"
+      (note that we use abbreviated keys so that the rendered page is small)
+      - "u" = "user"
+      - "n" = "message"
+      - "t" = "target"
+      - "v" = "verbatim"
+      - "f" = "filter_include"
+      - "r" = "results"
         - "w" = "word"
         - "s" = "score"
         - "e" = "error_score"
         - "m" = "language_model_score"
 
-        [[{"t": TARGET, "v": VERBATIM,
-           "r": [{"w": WORD, "s": SCORE,
-                  "e": ERROR_SCORE, "m": LANGUAGE_MODEL_SCORE}]}...]...]
+      [{"u": USER, "n": MESSAGE,
+        "t": TARGET, "v": VERBATIM,
+        "r": [{"w": WORD, "s": SCORE,
+               "e": ERROR_SCORE, "m": LANGUAGE_MODEL_SCORE}...]}...]
     '''
-    def get_results(candidates):
-        scorer = stats.Ic.scorer(candidates, opt['alpha'], opt['oov_penalty'])
-        results = ({'w': x[-3],
-                    's': scorer(x[-2:]),
-                    'e': x[-2],
-                    'm': x[-1]} for x in candidates)
-        return sorted(results, key=lambda x: x['s'], reverse=True)
-
-    return [[{'t': x['target'],
-              'v': x['verbatim'],
-              'r': get_results(x['candidates'])}
-             for x in line['inputCorrections']]
-            for line in log]
+    return [dict(
+        u=x.get('user'),
+        n=x['message'],
+        t=x['target'],
+        v=x['verbatim'],
+        f=filter(x['target']),
+        r=sorted((dict(w=t,
+                       s=model(e, lm),
+                       e=e,
+                       m=lm)
+                  for t, e, lm in x['results']),
+                 key=lambda r: r['s'], reverse=True))
+            for x in data]
 
 
 @click.command()
 @click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.option('-a', '--opt-args', type=common.JsonParam(),
-              help='Pass these arguments to the pretty program (for ``ic``),'
-              ' for example pre-computed using ``lmc ic-opt``.')
 @click.option('-v', '--verbose', default=0, count=True,
               help='How much human-readable detail to print to STDERR.')
-@click.option('-f', '--float-fmt', default='.4g',
+@click.option('-f', '--filter', type=common.TokenFilter(),
+              default='alphaemoji',
+              help='Only style tokens which match this filter.')
+@click.option('-m', '--float-fmt', default='.4g',
               help='The format of floats in the JSON file (use compact'
               ' representations to save file size).')
-def cli(log, opt_args, verbose, float_fmt):
+def cli(log, verbose, filter, float_fmt):
     '''Create an HTML page rendering of a log file.
 
-    Useful for investigating prediction issues. Currently only 'ic' is
+    Useful for investigating prediction issues. Currently only 'wr' is
     supported.
     '''
     common.verbosity(verbose)
@@ -183,21 +193,20 @@ def cli(log, opt_args, verbose, float_fmt):
     else:
         raise click.ClickException('Cannot handle multiple log files.')
 
-    if opt_args is None:
-        raise click.ClickException(
-            'Missing optimization args (run `lmc ic-opt` first to get'
-            ' optimization settings).')
-
-    # Create a snippet to substitute in, containing the data to be
-    # examined
-    ic_data = _process_ic_log(common.read_jsonlines(log), opt_args)
+    # Create a snippet to substitute in, containing the data to be examined
+    data = list(common.read_jsonlines(log))  # have to traverse multiple times
+    model = stats.Reranking.build_model(data, target_filter=filter)
     set_data = string.Template(
-        '$$(function () { ic_set_data(${IC_DATA}, ${IC_OPT}); });\n'
+        '$$(function () { wr_data(${WR_DATA}, "${WR_MODEL}"); });\n'
     ).substitute(
-        IC_DATA=_json_dumps_min(ic_data, float_format=float_fmt),
-        IC_OPT=_json_dumps_min(opt_args)
+        WR_DATA=_json_dumps_min(
+            _process_wr_log(data=data, filter=filter, model=model),
+            float_format=float_fmt
+        ),
+        WR_MODEL=str(model),
     )
 
+    # Render the HTML file, with all dependencies inlined
     files = _get_files()
     print(string.Template(files['PAGE']).substitute(
         LMC_SETUP=set_data, **files

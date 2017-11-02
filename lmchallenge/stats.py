@@ -313,12 +313,13 @@ class Reranking(Accumulator):
             )
 
     @classmethod
-    def build_model(cls, data):
+    def build_model(cls, data, target_filter):
         '''A helper to build a reranking model from data, using this class.
         '''
         a = cls.create()
         for datum in data:
-            a.update(datum)
+            if target_filter(datum['target']):
+                a.update(datum)
         a.finalize()
         return a._model
 

@@ -1,4 +1,7 @@
-// *** A Javascript visualizer for some IC logs ***
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT license.
+
+// *** A Javascript visualizer for LMC logs ***
 
 
 // Helpers
@@ -16,27 +19,31 @@ function percent(x) {
 // Computes summary statistics from the results set, as ratios
 function summary_stats(results) {
     var stats = {
+        "filter_included": 0,
         "inaccurate_incorrect": 0,
         "inaccurate_correct": 0,
         "accurate_incorrect": 0,
         "accurate_correct": 0
     };
     var total = 0
-    results.forEach(function (line) {
-        line.forEach(function (d) {
+    results.forEach(function (d) {
+        if (d.f) {
+            stats.filter_included += 1;
             var before = d.v === d.t;
             var after = d.r[0].w === d.t;
             stats.inaccurate_incorrect += !before && !after;
             stats.inaccurate_correct += !before && after;
             stats.accurate_incorrect += before && !after;
             stats.accurate_correct += before && after;
-            ++total;
-        });
+        }
+        ++total;
     });
     if (total !== 0) {
-        for (var k in stats) {
-            stats[k] = stats[k] / total;
-        }
+        stats.inaccurate_incorrect /= stats.filter_included;
+        stats.inaccurate_correct /= stats.filter_included;
+        stats.accurate_incorrect /= stats.filter_included;
+        stats.accurate_correct /= stats.filter_included;
+        stats.filter_included /= total;
     }
     return stats;
 }
@@ -82,11 +89,33 @@ function render_detail(datum) {
     $(".detail").empty().append(detail);
 }
 
-function render_pretty(log) {
+// Return the input data, grouped by user's messages
+//   data -- a list of events for tokens
+//   returns -- a list of list of events for each message
+function data_by_line(data) {
+    var lines = [];
+    var user = null;
+    var message = NaN;
+    var line = null;
+    for (var i = 0; i < data.length; ++i) {
+        var d = data[i];
+        if (d.u === user && d.n === message) {
+            line.push(d);
+        } else {
+            line = [d];
+            lines.push(line);
+            user = d.u;
+            message = d.n;
+        }
+    }
+    return lines;
+}
+
+function render_pretty(data) {
     var root = d3.select(".pretty");
 
     var rows = root.selectAll("p")
-        .data(log)
+        .data(data_by_line(data))
         .enter()
         .append("p")
         .classed("line", true);
@@ -138,20 +167,26 @@ function render_pretty(log) {
 
     // Update logic - General styling
     var all_cells = root.selectAll("p").selectAll("div");
+    all_cells.classed("filtered", function(d) {
+        return !d.f;
+    });
     all_cells.classed("uncorrected", function(d) {
-        return d.t !== d.v && d.t !== d.r[0].w;
+        return d.f && d.t !== d.v && d.t !== d.r[0].w;
     });
     all_cells.classed("miscorrected", function(d) {
-        return d.t === d.v && d.t !== d.r[0].w;
+        return d.f && d.t === d.v && d.t !== d.r[0].w;
     });
     all_cells.classed("corrected", function(d) {
-        return d.t !== d.v && d.t === d.r[0].w;
+        return d.f && d.t !== d.v && d.t === d.r[0].w;
     });
 }
 
 function render_summary(stats) {
     var table = $("<table>").addClass("table").addClass("table-bordered")
-        .append($("<tr><td></td><td>Incorrect</td><td>Correct</td></tr>"))
+        .append($("<tr>")
+                .append($("<td>").addClass('info').text("Filter " + percent(stats.filter_included)))
+                .append("<td>Incorrect</td>")
+                .append("<td>Correct</td>"))
         .append($("<tr>").append("<td>Inaccurate</td>")
                 .append($("<td>").addClass("warning").text(percent(stats.inaccurate_incorrect)))
                 .append($("<td>").addClass("success").text(percent(stats.inaccurate_correct))))
@@ -162,14 +197,10 @@ function render_summary(stats) {
     $(".results").empty().append(table);
 }
 
-function render_opt_settings(opt) {
-    $(".opt-settings").text(JSON.stringify(opt, null, 1));
-}
-
-function ic_set_data(results, opt) {
+function wr_data(results, model) {
     render_summary(summary_stats(results));
     render_pretty(results);
-    render_opt_settings(opt);
+    $(".opt-settings").text(model);
 }
 
 // A little setup on page load

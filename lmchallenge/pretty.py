@@ -193,7 +193,7 @@ class RenderReranking(RenderFiltered):
 
     @staticmethod
     def is_correct(target, results, model):
-        scores = ((t, model(e, lm or float("-inf")))
+        scores = ((t, model(e, lm))
                   for t, e, lm in results)
         target_score = next(score for t, score in scores if t == target)
         return all(score < target_score
@@ -255,13 +255,15 @@ class Challenge(common.ParamChoice):
     @staticmethod
     def reranking(data, filter, **args):
         data = list(data)  # have to traverse 'data' twice
-        model = stats.Reranking.build_model(data)
+        model = stats.Reranking.build_model(data, target_filter=filter)
         return render_log(
             data, RenderReranking(filter=filter, model=model))
 
 
 @click.command()
 @click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.option('-v', '--verbose', default=0, count=True,
+              help='How much human-readable detail to print to STDERR.')
 @click.option('-c', '--challenge', type=Challenge(),
               default='auto',
               help='Select which challenge to view (in the case where there'
@@ -271,15 +273,17 @@ class Challenge(common.ParamChoice):
               help='Only style tokens which match this filter.')
 @click.option('-i', '--entropy_interval', default=10.0,
               help='Interval to show entropy differences over')
-def cli(log, challenge, **args):
+def cli(log, verbose, challenge, **args):
     '''Pretty-print results from an LMChallenge game (using ANSI color codes).
     '''
+    common.verbosity(verbose)
+
     if len(log) == 0:
         single_log = '-'
     elif len(log) == 1:
         single_log = log[0]
     else:
-        raise click.ArgumentError('Can only handle 0 or 1 log files')
+        raise click.ArgumentError('Can only process zero or one log files')
 
     for line in challenge(common.read_jsonlines(single_log), **args):
         print(line)
