@@ -27,10 +27,10 @@ function summary_stats(results) {
     };
     var total = 0
     results.forEach(function (d) {
-        if (d.f) {
+        if (d.select) {
             stats.filter_included += 1;
-            var before = d.v === d.t;
-            var after = d.r[0].w === d.t;
+            var before = d.verbatim === d.target;
+            var after = d.results[0][0] === d.target;
             stats.inaccurate_incorrect += !before && !after;
             stats.inaccurate_correct += !before && after;
             stats.accurate_incorrect += before && !after;
@@ -62,25 +62,27 @@ function render_detail(datum) {
 
     detail.append($("<p>")
                   .append($("<b>").text("Target: "))
-                  .append(datum.t)
+                  .append(datum.target)
                   .append("<br/>")
                   .append($("<b>").text("Corrupted: "))
-                  .append(datum.v));
+                  .append(datum.verbatim));
 
     var table = $("<table>")
         .addClass("table").addClass("table-hover").addClass("table-bordered").addClass("results-table")
         .append("<tr><th>Rank:</th><th>Result:</th><th>Score:</th><th>Error score:</th><th>LM score:</th></tr>");
 
-    for (var i = 0; i < datum.r.length; ++i) {
-        var d = datum.r[i];
+    for (var i = 0; i < datum.results.length; ++i) {
+        var d = datum.results[i];
         var rank = i + 1;
         var entry = $("<tr>").append($("<td>").text(rank))
-            .append($("<td>").text(d.w))
-            .append($("<td>").text(to_fixed(d.s, 2)))
-            .append($("<td>").text(to_fixed(d.e, 2)))
-            .append($("<td>").text(to_fixed(d.m, 2)));
-        if (d.w === datum.t) {
-            entry.addClass("info");
+            .append($("<td>").text(d[0]))
+            .append($("<td>").text(to_fixed(d[3], 2)))  // score
+            .append($("<td>").text(to_fixed(d[1], 2)))  // error score
+            .append($("<td>").text(to_fixed(d[2], 2))); // lm score
+        if (d[0] === datum.target) {
+            entry.addClass("target-row");
+        } else if (d[0] === datum.verbatim) {
+            entry.addClass("verbatim-row");
         }
         table.append(entry);
     }
@@ -99,13 +101,13 @@ function data_by_line(data) {
     var line = null;
     for (var i = 0; i < data.length; ++i) {
         var d = data[i];
-        if (d.u === user && d.n === message) {
+        if (d.user === user && d.message === message) {
             line.push(d);
         } else {
             line = [d];
             lines.push(line);
-            user = d.u;
-            message = d.n;
+            user = d.user;
+            message = d.message;
         }
     }
     return lines;
@@ -131,9 +133,9 @@ function render_pretty(data) {
         .attr("data-html", true)
         .attr("data-placement", "bottom")
         .attr("title", function (d) {
-            return "<div class=\"tip\"><b>Target: </b>" + d.t +
-                "<br/><b>Corrupted: </b>" + d.v +
-                "<br/><b>Prediction: </b>" + d.r[0].w +
+            return "<div class=\"tip\"><b>Target: </b>" + d.target +
+                "<br/><b>Corrupted: </b>" + d.verbatim +
+                "<br/><b>Prediction: </b>" + d.results[0][0] +
                 "</div>";
         });
 
@@ -147,20 +149,20 @@ function render_pretty(data) {
 
     // Content
     cells.append("div")
-        .text(function (d) { return d.t; });
+        .text(function (d) { return d.target; });
     cells.append("div")
         .classed("word-detail", true)
         .attr("visibility", "hidden")
         .text(function (d) {
-            var r0 = d.r[0].w;
-            return (d.t === d.v && d.v === r0) ? "" : d.v;
+            var r0 = d.results[0][0];
+            return (d.target === d.verbatim && d.verbatim === r0) ? "" : d.verbatim;
         });
     cells.append("div")
         .classed("word-detail", true)
         .attr("visibility", "hidden")
         .text(function (d) {
-            var r0 = d.r[0].w;
-            return (d.t === d.v && d.v === r0) ? "" : r0;
+            var r0 = d.results[0][0];
+            return (d.target === d.verbatim && d.verbatim === r0) ? "" : r0;
         });
 
     set_annotations($(".annotations")[0].checked);
@@ -168,16 +170,16 @@ function render_pretty(data) {
     // Update logic - General styling
     var all_cells = root.selectAll("p").selectAll("div");
     all_cells.classed("filtered", function(d) {
-        return !d.f;
+        return !d.select;
     });
     all_cells.classed("uncorrected", function(d) {
-        return d.f && d.t !== d.v && d.t !== d.r[0].w;
+        return d.select && d.target !== d.verbatim && d.target !== d.results[0][0];
     });
     all_cells.classed("miscorrected", function(d) {
-        return d.f && d.t === d.v && d.t !== d.r[0].w;
+        return d.select && d.target === d.verbatim && d.target !== d.results[0][0];
     });
     all_cells.classed("corrected", function(d) {
-        return d.f && d.t !== d.v && d.t === d.r[0].w;
+        return d.select && d.target !== d.verbatim && d.target === d.results[0][0];
     });
 }
 

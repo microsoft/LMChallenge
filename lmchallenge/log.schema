@@ -12,6 +12,7 @@
         "message": {"type": "number"},
         "token": {"type": "number"},
         "target": {"type": "string"},
+        "select": {"type": "boolean"},
 
         "logp": {
             "title": "(Character|Word) Entropy result",
@@ -38,9 +39,23 @@
                 "minItems": 3,
                 "additionalItems": false,
                 "items": [
-                    {"type": "string"},
-                    {"type": "number", "maximum": 0},
-                    {"type": ["number", "null"]}
+                    {
+                        "title": "Candidate",
+                        "type": "string"
+                    },
+                    {
+                        "title": "Error score",
+                        "type": "number",
+                        "maximum": 0
+                    },
+                    {
+                        "title": "LM score",
+                        "type": ["number", "null"]
+                    },
+                    {
+                        "title": "Combined score (optional)",
+                        "type": "number"
+                    }
                 ]
             }
         },

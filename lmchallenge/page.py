@@ -88,7 +88,7 @@ def _get_files():
 
 
 def _json_dumps_min(data, float_format=''):
-    '''Tiny JSON serializer that supports strings, ints, floats, lists
+    '''Tiny JSON serializer that supports strings, ints, floats, tuples, lists
     and dictionaries.
 
     Compared to json.dumps, allows a format to specified for floating point
@@ -107,7 +107,7 @@ def _json_dumps_min(data, float_format=''):
             out.write(str(node))
         elif isinstance(node, float):
             out.write(format(node, float_format))
-        elif isinstance(node, list):
+        elif isinstance(node, (tuple, list)):
             out.write('[')
             for i, x in enumerate(node):
                 if i != 0:
@@ -130,42 +130,25 @@ def _json_dumps_min(data, float_format=''):
     return out.getvalue()
 
 
-def _process_wr_log(data, filter, model):
-    '''Prepare the word reranking log for reading with the JS script lmc.js.
-
-    Input format: WR log format.
-
-    Output format:
-      (note that we use abbreviated keys so that the rendered page is small)
-      - "u" = "user"
-      - "n" = "message"
-      - "t" = "target"
-      - "v" = "verbatim"
-      - "f" = "filter_include"
-      - "r" = "results"
-        - "w" = "word"
-        - "s" = "score"
-        - "e" = "error_score"
-        - "m" = "language_model_score"
-
-      [{"u": USER, "n": MESSAGE,
-        "t": TARGET, "v": VERBATIM,
-        "r": [{"w": WORD, "s": SCORE,
-               "e": ERROR_SCORE, "m": LANGUAGE_MODEL_SCORE}...]}...]
+def _log_select(data, target_filter):
+    '''Add the "select" keyword to the log, to select specific words to show.
     '''
-    return [dict(
-        u=x.get('user'),
-        n=x['message'],
-        t=x['target'],
-        v=x['verbatim'],
-        f=filter(x['target']),
-        r=sorted((dict(w=t,
-                       s=model(e, lm),
-                       e=e,
-                       m=lm)
-                  for t, e, lm in x['results']),
-                 key=lambda r: r['s'], reverse=True))
-            for x in data]
+    for datum in data:
+        yield dict(select=target_filter(datum['target']), **datum)
+
+
+def _log_combined_score(data, model):
+    '''Add the combined score to the word reranking results in the log, and
+    sort descending score.
+    '''
+    for datum in data:
+        datum = datum.copy()
+        datum['results'] = list(sorted(
+            ((candidate, error_score, lm_score, model(error_score, lm_score))
+             for candidate, error_score, lm_score in datum['results']),
+            key=lambda x: -x[-1]
+        ))
+        yield datum
 
 
 @click.command()
@@ -196,13 +179,11 @@ def cli(log, verbose, filter, float_fmt):
     # Create a snippet to substitute in, containing the data to be examined
     data = list(common.read_jsonlines(log))  # have to traverse multiple times
     model = stats.Reranking.build_model(data, target_filter=filter)
+    wr_data = list(_log_combined_score(_log_select(data, filter), model))
     set_data = string.Template(
         '$$(function () { wr_data(${WR_DATA}, "${WR_MODEL}"); });\n'
     ).substitute(
-        WR_DATA=_json_dumps_min(
-            _process_wr_log(data=data, filter=filter, model=model),
-            float_format=float_fmt
-        ),
+        WR_DATA=_json_dumps_min(wr_data, float_format=float_fmt),
         WR_MODEL=str(model),
     )
 

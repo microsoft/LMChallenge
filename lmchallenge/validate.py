@@ -21,10 +21,15 @@ def schema():
 
 @click.command()
 @click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-def cli(log):
+@click.option('-v', '--verbose', default=0, count=True,
+              help='How much human-readable detail to print to STDERR.')
+def cli(log, verbose):
     '''Validate a log file against the standard LMChallenge schema.
     '''
+    common.verbosity(verbose)
+
     log = log or ['-']
+
     log_schema = schema()
     for single_log in log:
         for line in common.read_jsonlines(single_log):

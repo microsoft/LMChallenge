@@ -26,6 +26,12 @@
     background-color: #ddf;
     font-weight: bold;
 }
+.target-row {
+    background-color: #a0ffc0;
+}
+.verbatim-row {
+    background-color: #ffe0c0;
+}
 
 .tip {
     text-align: left;
