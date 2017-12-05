@@ -21,6 +21,7 @@ setup(name='lmchallenge',
       install_requires=[
           'click',
           'emoji',
+          'jsonschema',
           'regex',
       ],
       tests_require=[
@@ -33,7 +34,7 @@ setup(name='lmchallenge',
 
       lmc-run=lmchallenge.run:cli
       lmc-stats=lmchallenge.stats:cli
-      lmc-ic-opt=lmchallenge.ic_opt:cli
       lmc-pretty=lmchallenge.pretty:cli
       lmc-page=lmchallenge.page:cli
+      lmc-validate=lmchallenge.validate:cli
       ''')

@@ -5,7 +5,7 @@
 '''
 
 import click
-from . import run, stats, pretty, page
+from . import run, stats, pretty, page, validate
 
 
 @click.group()
@@ -20,3 +20,4 @@ cli.add_command(run.cli, 'run')
 cli.add_command(stats.cli, 'stats')
 cli.add_command(pretty.cli, 'pretty')
 cli.add_command(page.cli, 'page')
+cli.add_command(validate.cli, 'validate')

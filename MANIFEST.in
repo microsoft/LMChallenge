@@ -1,2 +1,2 @@
 include version.txt README.md LICENSE
-recursive-include lmchallenge *.css *.html *.js
+recursive-include lmchallenge *.css *.html *.js *.schema
