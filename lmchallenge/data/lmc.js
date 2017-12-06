@@ -14,47 +14,128 @@ function percent(x) {
     return to_fixed(100 * x, 1) + " %";
 }
 
-// Rendering
+// Return the log data, grouped by user's messages
+//   data -- a list of events for tokens
+//   returns -- a list of list of events for each message
+function data_by_line(data) {
+    var lines = [];
+    var user = null;
+    var message = NaN;
+    var line = null;
+    for (var i = 0; i < data.length; ++i) {
+        var d = data[i];
+        if (d.user === user && d.message === message) {
+            line.push(d);
+        } else {
+            line = [d];
+            lines.push(line);
+            user = d.user;
+            message = d.message;
+        }
+    }
+    return lines;
+}
 
 // Computes summary statistics from the results set, as ratios
 function summary_stats(results) {
-    var stats = {
-        "filter_included": 0,
-        "inaccurate_incorrect": 0,
-        "inaccurate_correct": 0,
-        "accurate_incorrect": 0,
-        "accurate_correct": 0
-    };
-    var total = 0
+    // Set up aggregators
+    var stats = {"total": 0, "filter_included": 0};
+    if (results[0].verbatim) {
+        stats.wr = {
+            "inaccurate_incorrect": 0,
+            "inaccurate_correct": 0,
+            "accurate_incorrect": 0,
+            "accurate_correct": 0
+        };
+    }
+    if (results[0].logp !== undefined) {
+        stats.entropy = {
+            "hit": 0,
+            "entropy": 0
+        };
+    }
+
+    // Compute aggregates
     results.forEach(function (d) {
+        stats.total += 1;
         if (d.select) {
             stats.filter_included += 1;
-            var before = d.verbatim === d.target;
-            var after = d.results[0][0] === d.target;
-            stats.inaccurate_incorrect += !before && !after;
-            stats.inaccurate_correct += !before && after;
-            stats.accurate_incorrect += before && !after;
-            stats.accurate_correct += before && after;
+            if (stats.wr) {
+                var before = d.verbatim === d.target;
+                var after = d.results[0][0] === d.target;
+                stats.wr.inaccurate_incorrect += !before && !after;
+                stats.wr.inaccurate_correct += !before && after;
+                stats.wr.accurate_incorrect += before && !after;
+                stats.wr.accurate_correct += before && after;
+            }
+            if (stats.entropy) {
+                stats.entropy.hit += (d.logp !== null);
+                if (d.logp !== null) {
+                    stats.entropy.entropy -= d.logp;
+                }
+            }
         }
-        ++total;
     });
-    if (total !== 0) {
-        stats.inaccurate_incorrect /= stats.filter_included;
-        stats.inaccurate_correct /= stats.filter_included;
-        stats.accurate_incorrect /= stats.filter_included;
-        stats.accurate_correct /= stats.filter_included;
-        stats.filter_included /= total;
+
+    // "Sum up" stats
+    if (stats.wr) {
+        stats.wr.inaccurate_incorrect /= stats.filter_included;
+        stats.wr.inaccurate_correct /= stats.filter_included;
+        stats.wr.accurate_incorrect /= stats.filter_included;
+        stats.wr.accurate_correct /= stats.filter_included;
     }
+    if (stats.entropy) {
+        stats.entropy.entropy /= stats.entropy.hit;
+        stats.entropy.hit /= stats.total;
+    }
+    stats.filter_included /= stats.total;
+
     return stats;
 }
 
-function set_annotations(visible) {
-    if (visible) {
-        $(".word-detail").show();
-    } else {
-        $(".word-detail").hide();
+
+// Rendering
+
+function render_summary(stats) {
+    $(".results").empty();
+    if (stats.wr) {
+        $(".results").append($("<table>").addClass("table").addClass("table-bordered")
+            .append($("<tr>")
+                    .append($("<td>").addClass("info").text("Filter " + percent(stats.filter_included)))
+                    .append("<td>Incorrect</td>")
+                    .append("<td>Correct</td>"))
+            .append($("<tr>")
+                    .append("<td>Inaccurate</td>")
+                    .append($("<td>").addClass("warning").text(percent(stats.wr.inaccurate_incorrect)))
+                    .append($("<td>").addClass("success").text(percent(stats.wr.inaccurate_correct))))
+            .append($("<tr>")
+                    .append("<td>Accurate</td>")
+                    .append($("<td>").addClass("danger").text(percent(stats.wr.accurate_incorrect)))
+                    .append($("<td>").addClass("active").text(percent(stats.wr.accurate_correct))))
+        );
     }
-    $(".word").tooltip(visible ? "disable" : "enable");
+    if (stats.entropy) {
+        $(".results").append($("<table>").addClass("table").addClass("table-bordered")
+            .append($("<tr>")
+                    .append("<th>Filter</th>")
+                    .append($("<td>").addClass("info").text(percent(stats.filter_included))))
+            .append($("<tr>")
+                    .append("<th>Hit (after filter)</th>")
+                    .append($("<td>").addClass("warning").text(percent(stats.entropy.hit))))
+            .append($("<tr>")
+                    .append("<th>Entropy</th>")
+                    .append($("<td>").addClass("success").text(to_fixed(stats.entropy.entropy, 1))))
+        );
+    }
+}
+
+function set_side_by_side(side_by_side) {
+    if (side_by_side) {
+        $(".side-by-side").show();
+    } else {
+        $(".side-by-side").hide();
+    }
+    $(".word").tooltip(side_by_side ? "disable" : "enable");
 }
 
 function render_detail(datum) {
@@ -91,28 +172,6 @@ function render_detail(datum) {
     $(".detail").empty().append(detail);
 }
 
-// Return the input data, grouped by user's messages
-//   data -- a list of events for tokens
-//   returns -- a list of list of events for each message
-function data_by_line(data) {
-    var lines = [];
-    var user = null;
-    var message = NaN;
-    var line = null;
-    for (var i = 0; i < data.length; ++i) {
-        var d = data[i];
-        if (d.user === user && d.message === message) {
-            line.push(d);
-        } else {
-            line = [d];
-            lines.push(line);
-            user = d.user;
-            message = d.message;
-        }
-    }
-    return lines;
-}
-
 function render_pretty(data) {
     var root = d3.select(".pretty");
 
@@ -128,8 +187,38 @@ function render_pretty(data) {
         .append("div")
         .classed("word", true);
 
+    // Basic content - the targets themselves
+    cells.append("div")
+        .text(function (d) { return d.target; });
+
+    // Filter out unselected cells
+    cells.classed("filtered", function(d) {
+        return !d.select;
+    });
+
+    // Only return selected cells
+    return cells.filter(function (d) { return d.select; });
+}
+
+function render_wr_pretty(data) {
+    var cells = render_pretty(data);
+
+    // On click - details
+    cells.style("cursor", "pointer")
+        .on("click", function (d) {
+            $(".word.selected").removeClass("selected");
+            $(this).addClass("selected");
+            render_detail(d);
+            d3.event.stopPropagation();
+        });
+
+    var changed_cells = cells.filter(function (d) {
+        var r0 = d.results[0][0];
+        return d.target !== d.verbatim || d.verbatim !== r0;
+    });
+
     // Tooltips
-    cells.attr("data-toggle", "tooltip")
+    changed_cells.attr("data-toggle", "tooltip")
         .attr("data-html", true)
         .attr("data-placement", "bottom")
         .attr("title", function (d) {
@@ -139,77 +228,85 @@ function render_pretty(data) {
                 "</div>";
         });
 
-    // Click - details
-    cells.on("click", function(d) {
-        $(".word.selected").removeClass("selected");
-        $(this).addClass("selected");
-        render_detail(d);
-        d3.event.stopPropagation();
-    });
+    // Exapandable "side-by-side" content
+    changed_cells.append("div")
+        .classed("side-by-side", true)
+        .text(function (d) { return d.verbatim; });
+    changed_cells.append("div")
+        .classed("side-by-side", true)
+        .text(function (d) { return d.results[0][0]; });
+    set_side_by_side($(".wr-side-by-side")[0].checked);
 
-    // Content
-    cells.append("div")
-        .text(function (d) { return d.target; });
-    cells.append("div")
-        .classed("word-detail", true)
-        .attr("visibility", "hidden")
-        .text(function (d) {
-            var r0 = d.results[0][0];
-            return (d.target === d.verbatim && d.verbatim === r0) ? "" : d.verbatim;
-        });
-    cells.append("div")
-        .classed("word-detail", true)
-        .attr("visibility", "hidden")
-        .text(function (d) {
-            var r0 = d.results[0][0];
-            return (d.target === d.verbatim && d.verbatim === r0) ? "" : r0;
-        });
-
-    set_annotations($(".annotations")[0].checked);
-
-    // Update logic - General styling
-    var all_cells = root.selectAll("p").selectAll("div");
-    all_cells.classed("filtered", function(d) {
-        return !d.select;
-    });
-    all_cells.classed("uncorrected", function(d) {
-        return d.select && d.target !== d.verbatim && d.target !== d.results[0][0];
-    });
-    all_cells.classed("miscorrected", function(d) {
-        return d.select && d.target === d.verbatim && d.target !== d.results[0][0];
-    });
-    all_cells.classed("corrected", function(d) {
-        return d.select && d.target !== d.verbatim && d.target === d.results[0][0];
+    // Colours
+    changed_cells.style("color", function (d) {
+        var r0 = d.results[0][0];
+        if (d.target !== d.verbatim && d.target === r0) {
+            return "#00a030"; // corrected
+        } else if (d.target !== d.verbatim && d.target !== r0) {
+            return "#ff8000"; // uncorrected
+        } else if (d.target === d.verbatim && d.target !== r0) {
+            return "#ff0000"; // miscorrected
+        } else {
+            console.warn("unexpected case - cell should not be selected");
+            return "#000000";
+        }
     });
 }
 
-function render_summary(stats) {
-    var table = $("<table>").addClass("table").addClass("table-bordered")
-        .append($("<tr>")
-                .append($("<td>").addClass('info').text("Filter " + percent(stats.filter_included)))
-                .append("<td>Incorrect</td>")
-                .append("<td>Correct</td>"))
-        .append($("<tr>").append("<td>Inaccurate</td>")
-                .append($("<td>").addClass("warning").text(percent(stats.inaccurate_incorrect)))
-                .append($("<td>").addClass("success").text(percent(stats.inaccurate_correct))))
-        .append($("<tr>").append("<td>Accurate</td>")
-                .append($("<td>").addClass("danger").text(percent(stats.accurate_incorrect)))
-                .append($("<td>").addClass("active").text(percent(stats.accurate_correct))));
-
-    $(".results").empty().append(table);
+function set_entropy_min(minLogp) {
+    d3.selectAll(".entropy-hit")
+        .style("color", function (d) {
+            var maxLogp = 0;
+            var x = Math.max(0, Math.min(1, (d.logp - minLogp) / (maxLogp - minLogp)));
+            return d3.hsl(120 * x, 1, 0.4);
+        });
 }
 
-function wr_data(results, model) {
+function render_entropy_pretty(data) {
+    var cells = render_pretty(data);
+
+    // Tooltips
+    cells.attr("data-toggle", "tooltip")
+        .attr("data-placement", "bottom")
+        .attr("title", function (d) {
+            return to_fixed(d.logp, 3);
+        });
+
+    // Colours
+    cells.classed("entropy-miss", function (d) { return d.logp === null; });
+    cells.classed("entropy-hit", function (d) { return d.logp !== null; });
+    set_entropy_min(parseFloat($(".entropy-min").val()));
+}
+
+// Toplevel setup functions
+
+function setup_wr(results, model) {
+    $(".wr-only").show();
+    $(".entropy-only").hide();
     render_summary(summary_stats(results));
-    render_pretty(results);
-    $(".opt-settings").text(model);
+    render_wr_pretty(results);
+    $(".wr-settings").text(model);
+}
+
+function setup_entropy(results) {
+    $(".entropy-only").show();
+    $(".wr-only").hide();
+    render_summary(summary_stats(results));
+    render_entropy_pretty(results);
 }
 
 // A little setup on page load
+
 $(function() {
-    $(".annotations").change(function() {
-        set_annotations(this.checked);
+    $(".wr-side-by-side").change(function() {
+        set_side_by_side(this.checked);
     });
+
+    // keyup|mouseup as change() doesn't fire as reliably for number input
+    $(".entropy-min").bind("keyup mouseup", function() {
+        set_entropy_min(this.value);
+    });
+
     $(".pretty").click(function () {
         $(".word.selected").removeClass("selected");
         $(".detail").empty();

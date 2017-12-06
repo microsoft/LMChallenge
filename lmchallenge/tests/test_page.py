@@ -27,5 +27,7 @@ def test_json_dumps_min():
         eq_(json.loads(page._json_dumps_min(document, float_format='.3g')),
             document)
 
-    eq_(page._json_dumps_min(math.pi, '.1f'), "3.1")
-    eq_(page._json_dumps_min(math.pi, '.3g'), "3.14")
+    eq_(page._json_dumps_min(math.pi, '.1f'), '3.1')
+    eq_(page._json_dumps_min(math.pi, '.3g'), '3.14')
+    # Tuples are written as JSON lists
+    eq_(page._json_dumps_min(('abc', 123)), '["abc",123]')

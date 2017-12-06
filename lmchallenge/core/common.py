@@ -109,22 +109,6 @@ def read_jsonlines(filename):
             yield json.loads(line.rstrip('\r\n'))
 
 
-def autodetect_log(data, wp, tc, ic):
-    '''Detect which game this log contains, and return the appropriate object.
-    '''
-    log_keys = data[0].keys()
-    if 'wordPredictions' in log_keys:
-        return wp
-    elif 'textCompletions' in log_keys:
-        return tc
-    elif 'inputCorrections' in log_keys:
-        return ic
-    else:
-        raise ValueError(
-            'Unrecognized log line %s' % data[0]
-        )
-
-
 def zip_special(a, b):
     '''A bit like Python's zip, except:
       - Only works for "lengthable" 'a', 'b'.
@@ -306,6 +290,42 @@ class TokenFilter(ParamChoice):
     name = 'token_filter'
     choices = ['all', 'nospace', 'nomarker',
                'alpha', 'alphaonly', 'alphaemoji', 'emoji']
+
+
+class ChallengeChoice(ParamChoice):
+    '''Select processing to run on a generated log.
+    '''
+    name = 'challenge'
+    choices = ['auto', 'completion', 'entropy', 'reranking']
+
+    @classmethod
+    def auto(cls, data, **args):
+        first, data = peek(data)
+
+        is_completion = 'completions' in first
+        is_entropy = 'logp' in first
+        is_reranking = 'results' in first
+        if sum([is_completion, is_entropy, is_reranking]) != 1:
+            raise Exception('Cannot infer log type from data')
+
+        if is_completion:
+            return cls.completion(data, **args)
+        elif is_entropy:
+            return cls.entropy(data, **args)
+        elif is_reranking:
+            return cls.reranking(data, **args)
+
+    @staticmethod
+    def completion(data, **args):
+        raise NotImplementedError
+
+    @staticmethod
+    def entropy(data, **args):
+        raise NotImplementedError
+
+    @staticmethod
+    def reranking(data, **args):
+        raise NotImplementedError
 
 
 def qualified_name(x):

@@ -177,15 +177,27 @@ def cli(log, verbose, filter, float_fmt):
         raise click.ClickException('Cannot handle multiple log files.')
 
     # Create a snippet to substitute in, containing the data to be examined
-    data = list(common.read_jsonlines(log))  # have to traverse multiple times
-    model = stats.Reranking.build_model(data, target_filter=filter)
-    wr_data = list(_log_combined_score(_log_select(data, filter), model))
-    set_data = string.Template(
-        '$$(function () { wr_data(${WR_DATA}, "${WR_MODEL}"); });\n'
-    ).substitute(
-        WR_DATA=_json_dumps_min(wr_data, float_format=float_fmt),
-        WR_MODEL=str(model),
-    )
+    # list(), as have to traverse multiple times
+    data = list(_log_select(common.read_jsonlines(log), filter))
+
+    if 'results' in data[0]:
+        # Word Reranking
+        model = stats.Reranking.build_model(data, target_filter=filter)
+        wr_data = list(_log_combined_score(data, model))
+        set_data = string.Template(
+            'setup_wr(${WR_DATA}, "${WR_MODEL}");'
+        ).substitute(
+            WR_DATA=_json_dumps_min(wr_data, float_format=float_fmt),
+            WR_MODEL=str(model),
+        )
+    elif 'logp' in data[0]:
+        set_data = string.Template(
+            'setup_entropy(${DATA});'
+        ).substitute(
+            DATA=_json_dumps_min(data)
+        )
+    elif 'completions' in data[0]:
+        pass
 
     # Render the HTML file, with all dependencies inlined
     files = _get_files()

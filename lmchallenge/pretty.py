@@ -219,29 +219,9 @@ class RenderReranking(RenderFiltered):
         out.write(datum['target'])
 
 
-class Challenge(common.ParamChoice):
-    '''Select an analysis to run on a generated log.
+class ChallengeChoice(common.ChallengeChoice):
+    '''Select a pretty printing program.
     '''
-    name = 'challenge'
-    choices = ['auto', 'completion', 'entropy', 'reranking']
-
-    @classmethod
-    def auto(cls, data, **args):
-        first, data = common.peek(data)
-
-        is_completion = 'completions' in first
-        is_entropy = 'logp' in first
-        is_reranking = 'results' in first
-        if sum([is_completion, is_entropy, is_reranking]) != 1:
-            raise Exception('Cannot infer log type from data')
-
-        if is_completion:
-            return cls.completion(data, **args)
-        elif is_entropy:
-            return cls.entropy(data, **args)
-        elif is_reranking:
-            return cls.reranking(data, **args)
-
     @staticmethod
     def completion(data, filter, **args):
         return render_log(
@@ -264,7 +244,7 @@ class Challenge(common.ParamChoice):
 @click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.option('-v', '--verbose', default=0, count=True,
               help='How much human-readable detail to print to STDERR.')
-@click.option('-c', '--challenge', type=Challenge(),
+@click.option('-c', '--challenge', type=ChallengeChoice(),
               default='auto',
               help='Select which challenge to view (in the case where there'
               ' are multiple challenges in a single log)')

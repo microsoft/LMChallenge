@@ -10,6 +10,7 @@ ${LMC_CSS}
     </style>
 
   </head>
+
   <body>
     <div class="container-fluid">
       <div class="row">
@@ -20,13 +21,20 @@ ${LMC_CSS}
 
       <div class="row">
         <div class="col-md-4">
-          <div class="checkbox">
+          <div class="input-group wr-only">
             <label>
-              <input class="annotations" type="checkbox">Side-by-side</input>
+              <input class="wr-side-by-side" type="checkbox">
+              Side-by-side
+            </label>
+          </div>
+          <div class="input-group entropy-only">
+            <label>
+              Log-prob minimum
+              <input class="entropy-min" type="number" max="0", value="-10">
             </label>
           </div>
           <div class="results"></div>
-          <pre class="opt-settings"></pre>
+          <pre class="wr-settings wr-only"></pre>
           <div class="detail"></div>
         </div>
 
@@ -50,7 +58,9 @@ ${D3_JS}
 ${LMC_JS}
     </script>
     <script type="text/javascript">
-${LMC_SETUP}
+      $$(function () {
+          ${LMC_SETUP}
+      });
     </script>
   </body>
 </html>
