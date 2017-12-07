@@ -17,20 +17,27 @@ function percent(x) {
 // Return the log data, grouped by user's messages
 //   data -- a list of events for tokens
 //   returns -- a list of list of events for each message
+//              (adds the attribute "skip" which is true if
+//              the datum is not a consecutive character)
 function data_by_line(data) {
     var lines = [];
     var user = null;
     var message = NaN;
     var line = null;
+    var character = null;
     for (var i = 0; i < data.length; ++i) {
-        var d = data[i];
+        var d = Object.assign({}, data[i]);
         if (d.user === user && d.message === message) {
+            d.skip = (d.character !== character + 1);
             line.push(d);
+            character = d.character;
         } else {
+            d.skip = false;
             line = [d];
             lines.push(line);
             user = d.user;
             message = d.message;
+            character = d.character;
         }
     }
     return lines;
@@ -283,7 +290,8 @@ function render_pretty(data) {
         .data(function (d) { return d; })
         .enter()
         .append("div")
-        .classed("word", true);
+        .classed("word", true)
+        .classed("spaced", function (d) { return d.skip; });
 
     // Basic content - the targets themselves
     cells.append("div")

@@ -4,9 +4,12 @@
 
 .word {
     display: inline-block;
-    margin-right: .5em;
     vertical-align: top;
     color: #202020;
+    white-space: pre;
+}
+.word.spaced {
+    margin-right: .5em;
 }
 
 .filtered {
