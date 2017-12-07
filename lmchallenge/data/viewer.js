@@ -417,26 +417,27 @@ function render_wc_pretty(data) {
 
 // Toplevel initialization functions
 
+function setup_wc(results) {
+    $(".entropy-only").hide();
+    $(".wr-only").hide();
+    render_summary(summary_stats(results));
+    render_wc_pretty(results);
+}
+
+function setup_entropy(results, interval) {
+    $(".entropy-only").show();
+    $(".wr-only").hide();
+    $(".entropy-min").val(-interval);
+    render_summary(summary_stats(results));
+    render_entropy_pretty(results);
+}
+
 function setup_wr(results, model) {
     $(".wr-only").show();
     $(".entropy-only").hide();
     render_summary(summary_stats(results));
     render_wr_pretty(results);
     $(".wr-settings").text(model);
-}
-
-function setup_entropy(results) {
-    $(".entropy-only").show();
-    $(".wr-only").hide();
-    render_summary(summary_stats(results));
-    render_entropy_pretty(results);
-}
-
-function setup_wc(results) {
-    $(".entropy-only").hide();
-    $(".wr-only").hide();
-    render_summary(summary_stats(results));
-    render_wc_pretty(results);
 }
 
 

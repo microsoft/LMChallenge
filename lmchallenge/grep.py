@@ -100,7 +100,7 @@ class Keep(common.ParamChoice):
 
     token -- keeps only selected tokens themselves
     '''
-    name = 'keep_filter'
+    name = 'keep'
     choices = ['all', 'message', 'token']
 
     @staticmethod
