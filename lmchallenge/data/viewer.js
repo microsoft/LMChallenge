@@ -242,7 +242,6 @@ function render_wr_detail(datum) {
 }
 
 function render_wc_detail(datum) {
-    console.log(datum);
     var table = $("<table>")
         .addClass("table table-hover table-bordered results-table");
 
