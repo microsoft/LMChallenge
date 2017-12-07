@@ -59,9 +59,9 @@ def _get_files():
     # Note: to get the checksums:
     #   wget https://URL -O - | sha384sum
     return dict(
-        PAGE=_read_data_file('page.html'),
-        LMC_CSS=_read_data_file('lmc.css'),
-        LMC_JS=_read_data_file('lmc.js'),
+        LMC_VIEWER_HTML=_read_data_file('viewer.html'),
+        LMC_VIEWER_CSS=_read_data_file('viewer.css'),
+        LMC_VIEWER_JS=_read_data_file('viewer.js'),
         BOOTSTRAP_CSS=_download_cache_cdn(
             'https://'
             'maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css',
@@ -172,7 +172,7 @@ def cli(log, verbose, float_fmt):
 
     if 'results' in data[0]:
         # Word Reranking
-        model = stats.Reranking.build_model(data, target_filter=filter)
+        model = stats.Reranking.build_model(data)
         wr_data = list(_log_combined_score(data, model))
         set_data = string.Template(
             'setup_wr(${WR_DATA}, "${WR_MODEL}");'
@@ -195,7 +195,7 @@ def cli(log, verbose, float_fmt):
 
     # Render the HTML file, with all dependencies inlined
     files = _get_files()
-    print(string.Template(files['PAGE']).substitute(
+    print(string.Template(files['LMC_VIEWER_HTML']).substitute(
         LMC_SETUP=set_data, **files
     ))
 
