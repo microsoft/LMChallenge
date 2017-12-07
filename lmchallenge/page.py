@@ -197,7 +197,11 @@ def cli(log, verbose, filter, float_fmt):
             DATA=_json_dumps_min(data)
         )
     elif 'completions' in data[0]:
-        pass
+        set_data = string.Template(
+            'setup_wc(${DATA});'
+        ).substitute(
+            DATA=_json_dumps_min(data)
+        )
 
     # Render the HTML file, with all dependencies inlined
     files = _get_files()

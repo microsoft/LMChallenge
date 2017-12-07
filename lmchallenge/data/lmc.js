@@ -36,11 +36,25 @@ function data_by_line(data) {
     return lines;
 }
 
+function nwp_rank(d) {
+    return 1 + d.completions[0].indexOf(d.target);
+}
+
+function chars_completed(d) {
+    for (var i = 0; i < d.completions.length; ++i) {
+        var rank = 1 + d.completions[i].indexOf(d.target.substr(i));
+        if (rank !== 0 && rank <= 2) {
+            return d.target.length - i;
+        }
+    }
+    return 0;
+}
+
 // Computes summary statistics from the results set, as ratios
 function summary_stats(results) {
     // Set up aggregators
     var stats = {"total": 0, "filter_included": 0};
-    if (results[0].verbatim) {
+    if (results[0].verbatim !== undefined) {
         stats.wr = {
             "inaccurate_incorrect": 0,
             "inaccurate_correct": 0,
@@ -52,6 +66,15 @@ function summary_stats(results) {
         stats.entropy = {
             "hit": 0,
             "entropy": 0
+        };
+    }
+    if (results[0].completions !== undefined) {
+        stats.wc = {
+            "hit1": 0,
+            "hit3": 0,
+            "hit10": 0,
+            "mrr": 0,
+            "chars_completed": 0
         };
     }
 
@@ -74,6 +97,16 @@ function summary_stats(results) {
                     stats.entropy.entropy -= d.logp;
                 }
             }
+            if (stats.wc) {
+                var r0 = nwp_rank(d);
+                if (r0 !== 0) {
+                    stats.wc.hit1 += (r0 <= 1);
+                    stats.wc.hit3 += (r0 <= 3);
+                    stats.wc.hit10 += (r0 <= 10);
+                    stats.wc.mrr += 1 / r0;
+                }
+                stats.wc.chars_completed += chars_completed(d);
+            }
         }
     });
 
@@ -86,7 +119,14 @@ function summary_stats(results) {
     }
     if (stats.entropy) {
         stats.entropy.entropy /= stats.entropy.hit;
-        stats.entropy.hit /= stats.total;
+        stats.entropy.hit /= stats.filter_included;
+    }
+    if (stats.wc) {
+        stats.wc.hit1 /= stats.filter_included;
+        stats.wc.hit3 /= stats.filter_included;
+        stats.wc.hit10 /= stats.filter_included;
+        stats.wc.mrr /= stats.filter_included;
+        stats.wc.chars_completed /= stats.filter_included;
     }
     stats.filter_included /= stats.total;
 
@@ -124,7 +164,29 @@ function render_summary(stats) {
                     .append($("<td>").addClass("warning").text(percent(stats.entropy.hit))))
             .append($("<tr>")
                     .append("<th>Entropy</th>")
-                    .append($("<td>").addClass("success").text(to_fixed(stats.entropy.entropy, 1))))
+                    .append($("<td>").addClass("success").text(to_fixed(stats.entropy.entropy, 2))))
+        );
+    }
+    if (stats.wc) {
+        $(".results").append($("<table>").addClass("table").addClass("table-bordered")
+            .append($("<tr>")
+                    .append("<th>Filter</th>")
+                    .append($("<td>").addClass("info").text(percent(stats.filter_included))))
+            .append($("<tr>")
+                    .append("<th>Hit@1</th>")
+                    .append($("<td>").addClass("success").text(percent(stats.wc.hit1))))
+            .append($("<tr>")
+                    .append("<th>Hit@3</th>")
+                    .append($("<td>").addClass("success").text(percent(stats.wc.hit3))))
+            .append($("<tr>")
+                    .append("<th>Hit@10</th>")
+                    .append($("<td>").addClass("success").text(percent(stats.wc.hit10))))
+            .append($("<tr>")
+                    .append("<th>MRR</th>")
+                    .append($("<td>").addClass("success").text(to_fixed(stats.wc.mrr, 3))))
+            .append($("<tr>")
+                    .append("<th>Chars completed (/word)</th>")
+                    .append($("<td>").addClass("warning").text(to_fixed(stats.wc.chars_completed, 3))))
         );
     }
 }
@@ -138,7 +200,7 @@ function set_side_by_side(side_by_side) {
     $(".word").tooltip(side_by_side ? "disable" : "enable");
 }
 
-function render_detail(datum) {
+function render_wr_detail(datum) {
     var detail = $("<div>");
 
     detail.append($("<p>")
@@ -149,7 +211,7 @@ function render_detail(datum) {
                   .append(datum.verbatim));
 
     var table = $("<table>")
-        .addClass("table").addClass("table-hover").addClass("table-bordered").addClass("results-table")
+        .addClass("table table-hover table-bordered results-table")
         .append("<tr><th>Rank:</th><th>Result:</th><th>Score:</th><th>Error score:</th><th>LM score:</th></tr>");
 
     for (var i = 0; i < datum.results.length; ++i) {
@@ -172,6 +234,42 @@ function render_detail(datum) {
     $(".detail").empty().append(detail);
 }
 
+function render_wc_detail(datum) {
+    console.log(datum);
+    var table = $("<table>")
+        .addClass("table table-hover table-bordered results-table");
+
+    table.append($("<tr>")
+                 .append($("<th>").attr("scope", "col").addClass("table-dark").text('"' + datum.target + '"'))
+                 .append($("<th>").attr("scope", "col").text('#1'))
+                 .append($("<th>").attr("scope", "col").text('#2'))
+                 .append($("<th>").attr("scope", "col").text('#3'))
+                 .append($("<th>").attr("scope", "col").text('Rank')));
+
+    for (var i = 0; i < datum.target.length; ++i) {
+        var prefix = datum.target.substr(0, i);
+        var suffix = datum.target.substr(i);
+        var completions = (i < datum.completions.length
+                           ? datum.completions[i]
+                           : []);
+        var rank = 1 + completions.indexOf(suffix);
+        var entry = $("<tr>")
+            .append($("<th>").attr("scope", "row").text(prefix))
+            .append($("<td>").text(completions[0]))
+            .append($("<td>").text(completions[1]))
+            .append($("<td>").text(completions[2]))
+            .append($("<td>").addClass("results-table-rank").text(rank == 0 ? "null" : rank));
+        if ((1 <= rank && rank <= 2) || (i == 0 && rank == 3)) {
+            entry.addClass("bg-success");
+        } else {
+            entry.addClass("bg-danger");
+        }
+        table.append(entry);
+    }
+
+    $(".detail").empty().append(table);
+}
+
 function render_pretty(data) {
     var root = d3.select(".pretty");
 
@@ -191,10 +289,8 @@ function render_pretty(data) {
     cells.append("div")
         .text(function (d) { return d.target; });
 
-    // Filter out unselected cells
-    cells.classed("filtered", function(d) {
-        return !d.select;
-    });
+    // Style unselected cells
+    cells.classed("filtered", function(d) { return !d.select; });
 
     // Only return selected cells
     return cells.filter(function (d) { return d.select; });
@@ -208,7 +304,7 @@ function render_wr_pretty(data) {
         .on("click", function (d) {
             $(".word.selected").removeClass("selected");
             $(this).addClass("selected");
-            render_detail(d);
+            render_wr_detail(d);
             d3.event.stopPropagation();
         });
 
@@ -278,7 +374,40 @@ function render_entropy_pretty(data) {
     set_entropy_min(parseFloat($(".entropy-min").val()));
 }
 
-// Toplevel setup functions
+function render_wc_pretty(data) {
+    var cells = render_pretty(data);
+
+    cells.style("cursor", "pointer")
+        .on("click", function (d) {
+            $(".word.selected").removeClass("selected");
+            $(this).addClass("selected");
+            render_wc_detail(d);
+            d3.event.stopPropagation();
+        });
+
+
+    cells.classed("wc-predicted", function (d) {
+        var rank = nwp_rank(d);
+        return 1 <= rank && rank <= 3;
+    });
+    cells.classed("wc-unpredicted", function (d) {
+        var rank = nwp_rank(d);
+        return !(1 <= rank && rank <= 3);
+    });
+    cells.html(function (d) {
+        var rank = nwp_rank(d);
+        var completed = chars_completed(d);
+        if ((1 <= rank && rank <= 3) || completed === 0) {
+            return d.target;
+        } else {
+            var offset = d.target.length - completed;
+            return d.target.substr(0, offset) + "<i>" + d.target.substr(offset) + "</i>";
+        }
+    });
+}
+
+
+// Toplevel initialization functions
 
 function setup_wr(results, model) {
     $(".wr-only").show();
@@ -295,7 +424,15 @@ function setup_entropy(results) {
     render_entropy_pretty(results);
 }
 
-// A little setup on page load
+function setup_wc(results) {
+    $(".entropy-only").hide();
+    $(".wr-only").hide();
+    render_summary(summary_stats(results));
+    render_wc_pretty(results);
+}
+
+
+// Event handler setup
 
 $(function() {
     $(".wr-side-by-side").change(function() {

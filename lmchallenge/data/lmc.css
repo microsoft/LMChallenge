@@ -18,6 +18,16 @@
 .entropy-hit {
     font-weight: bold;
 }
+.wc-predicted {
+    color: #00a030;
+}
+.wc-unpredicted {
+    color: #ff0000;
+}
+.wc-unpredicted i {
+    color: #ffa000;
+    font-style: normal;
+}
 .selected {
     background-color: #ddf;
     font-weight: bold;
@@ -33,4 +43,7 @@
 }
 .results-table {
     font-size: small;
+}
+.results-table-rank {
+    font-family: mono;
 }

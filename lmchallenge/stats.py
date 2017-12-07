@@ -221,6 +221,7 @@ class Completion(Accumulator):
                 if common.rank(completions, target, max_rank=self._max_rank):
                     self._characters += len(datum['target']) - start
                     self._tokens += 1
+                    break
 
     @property
     def state(self):
