@@ -130,13 +130,6 @@ def _json_dumps_min(data, float_format=''):
     return out.getvalue()
 
 
-def _log_select(data, target_filter):
-    '''Add the "select" keyword to the log, to select specific words to show.
-    '''
-    for datum in data:
-        yield dict(select=target_filter(datum['target']), **datum)
-
-
 def _log_combined_score(data, model):
     '''Add the combined score to the word reranking results in the log, and
     sort descending score.
@@ -155,13 +148,10 @@ def _log_combined_score(data, model):
 @click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
 @click.option('-v', '--verbose', default=0, count=True,
               help='How much human-readable detail to print to STDERR.')
-@click.option('-f', '--filter', type=common.TokenFilter(),
-              default='alphaemoji',
-              help='Only style tokens which match this filter.')
 @click.option('-m', '--float-fmt', default='.4g',
               help='The format of floats in the JSON file (use compact'
               ' representations to save file size).')
-def cli(log, verbose, filter, float_fmt):
+def cli(log, verbose, float_fmt):
     '''Create an HTML page rendering of a log file.
 
     Useful for investigating prediction issues. Currently only 'wr' is
@@ -178,7 +168,7 @@ def cli(log, verbose, filter, float_fmt):
 
     # Create a snippet to substitute in, containing the data to be examined
     # list(), as have to traverse multiple times
-    data = list(_log_select(common.read_jsonlines(log), filter))
+    data = list(common.read_jsonlines(log))
 
     if 'results' in data[0]:
         # Word Reranking

@@ -314,12 +314,12 @@ class Reranking(Accumulator):
             )
 
     @classmethod
-    def build_model(cls, data, target_filter):
+    def build_model(cls, data):
         '''A helper to build a reranking model from data, using this class.
         '''
         a = cls.create()
         for datum in data:
-            if target_filter(datum['target']):
+            if common.is_selected(datum):
                 a.update(datum)
         a.finalize()
         return a._model
@@ -367,21 +367,19 @@ class Stats(Composite):
         )
 
 
-class Filter(Accumulator):
-    '''Apply a filter to each event, and only pass onto a child accumulator
-    if the event passes the filter.
+class Selection(Accumulator):
+    '''Select data based on the "select" tag in each datum.
     '''
-    def __init__(self, include, child):
-        self._include = include
+    def __init__(self, child):
         self._skipped = 0
         self._child = child
 
     @classmethod
-    def create(cls, include, child):
-        return cls(include=include, child=child)
+    def create(cls, child):
+        return cls(child=child)
 
     def update(self, datum):
-        if self._include(datum):
+        if common.is_selected(datum):
             self._child.update(datum)
         else:
             self._skipped += 1
@@ -395,27 +393,23 @@ class Filter(Accumulator):
                        dict(value=child_state)))
 
 
-class TargetFilter(Filter):
-    '''A filter for target tokens, against a predicate (e.g. common.TokenFilter).
-    '''
-    @classmethod
-    def create(cls, include, child):
-        return super(TargetFilter, cls).create(
-            include=lambda datum: include(datum['target']),
-            child=child)
-
-
-def stats(data, filter):
+def stats(data):
     '''Run the standard set of accumulators over 'data'.
+
+    data -- iterable -- a results log
+
+    returns -- an accumulated (machine-readable) set of stats
+               (can pass this to "humanize" to get a more agreeable
+               format)
     '''
-    accumulator = TargetFilter.create(include=filter, child=Stats.create())
+    accumulator = Selection.create(child=Stats.create())
     for datum in data:
         accumulator.update(datum)
     return accumulator.state
 
 
 def humanize(stats):
-    '''To be used with the output of the TargetFilter & Stats accumulators.
+    '''To be used with the output of the Selection & Stats accumulators.
     '''
     stats = stats.copy()
     r = dict()
@@ -430,7 +424,7 @@ def humanize(stats):
     r['tokens_per_user'] = tokens / r['users']
     r['characters_per_token'] = characters / tokens
 
-    # Filtering
+    # Skipped/unselected
     if 'skipped' in stats:
         skipped = stats.pop('skipped')
         r['skipped'] = skipped / (skipped + tokens)
@@ -524,9 +518,6 @@ class Output(common.ParamChoice):
               help='How much human-readable detail to print to STDERR.')
 @click.option('-n', '--lines', type=click.INT,
               help='Limit input to this number of lines')
-@click.option('-f', '--filter', type=common.TokenFilter(),
-              default='alphaemoji',
-              help='Only count tokens which match this filter.')
 @click.option('-o', '--output', type=Output(), default='json',
               help='Output format.')
 @click.option('-h/-H', '--human/--no-human', default=True,
@@ -538,8 +529,7 @@ def cli(log, verbose, lines, output, human, **args):
     common.verbosity(verbose)
     log = log or ['-']
     results = [dict(log=file,
-                    **stats(it.islice(common.read_jsonlines(file), lines),
-                            **args))
+                    **stats(it.islice(common.read_jsonlines(file), lines)))
                for file in log]
     if human:
         results = [humanize(result) for result in results]

@@ -62,15 +62,6 @@ def get_logp(model, context, target):
         return None
 
 
-def dump_jsonl(data):
-    '''Dump data to stdout in jsonlines format.
-
-    data -- iterable of dict -- data to dump
-    '''
-    for d in data:
-        sys.stdout.write(json.dumps(d, sort_keys=True) + "\n")
-
-
 # Evaluation
 
 def evaluate_completions(model, context, target, next_word_only):
@@ -293,7 +284,7 @@ def cli(ctx, verbose, predictor, train, format, options):
 
     def _runner(tokenizer, evaluate):
         with predictor(options) as model:
-            dump_jsonl(run_tokens(
+            common.dump_jsonlines(run_tokens(
                 model=model,
                 data=format(sys.stdin),
                 train=train,

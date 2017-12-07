@@ -78,26 +78,28 @@ def render_log(data, render_token):
             yield f.getvalue()
 
 
-class RenderFiltered:
-    '''Base class for rendering filtered tokens.
+class RenderSelected:
+    '''Base class for rendering selected/unselected tokens.
     '''
-    def __init__(self, filter):
-        self._filter = filter
-
     def __call__(self, datum, out):
-        if self._filter(datum['target']):
+        if common.is_selected(datum):
             self._render(datum, out)
         else:
             out.color(AnsiRender.BLUE, False)
             out.write(datum['target'])
 
     def _render(self, datum, out):
-        '''Called to render an unfiltered token to "out".
+        '''Called to render a token (which has not been "deselected") to the
+        AnsiRender instance "out".
+
+        datum -- dict -- log datum to render
+
+        out -- AnsiRender -- output of rendering
         '''
         raise NotImplementedError
 
 
-class RenderCompletion(RenderFiltered):
+class RenderCompletion(RenderSelected):
     '''Pretty-print a token to show next-word-prediction/completion.
 
     If the token is next-word predicted, the entire token is green (and
@@ -131,7 +133,7 @@ class RenderCompletion(RenderFiltered):
             out.write(datum['target'][typed:])
 
 
-class RenderEntropy(RenderFiltered):
+class RenderEntropy(RenderSelected):
     '''Pretty-print a token to show entropy contribution.
 
         +-------------+------------+
@@ -148,8 +150,7 @@ class RenderEntropy(RenderFiltered):
         | 4i/5 - ...  | Bold Red   |
         +-------------+------------+
     '''
-    def __init__(self, filter, interval):
-        super().__init__(filter)
+    def __init__(self, interval):
         self._interval = interval
 
     def _render(self, datum, out):
@@ -170,7 +171,7 @@ class RenderEntropy(RenderFiltered):
         out.write(datum['target'])
 
 
-class RenderReranking(RenderFiltered):
+class RenderReranking(RenderSelected):
     '''Pretty-print a token to show correction.
 
         +-----------+-----------+---------+
@@ -187,8 +188,7 @@ class RenderReranking(RenderFiltered):
         | Correct   | Correct   | White   |
         +-----------+-----------+---------+
     '''
-    def __init__(self, filter, model):
-        super().__init__(filter)
+    def __init__(self, model):
         self._model = model
 
     @staticmethod
@@ -223,21 +223,21 @@ class ChallengeChoice(common.ChallengeChoice):
     '''Select a pretty printing program.
     '''
     @staticmethod
-    def completion(data, filter, **args):
+    def completion(data, **args):
         return render_log(
-            data, RenderCompletion(filter=filter))
+            data, RenderCompletion())
 
     @staticmethod
-    def entropy(data, filter, entropy_interval, **args):
+    def entropy(data, entropy_interval, **args):
         return render_log(
-            data, RenderEntropy(filter=filter, interval=entropy_interval))
+            data, RenderEntropy(interval=entropy_interval))
 
     @staticmethod
-    def reranking(data, filter, **args):
+    def reranking(data, **args):
         data = list(data)  # have to traverse 'data' twice
-        model = stats.Reranking.build_model(data, target_filter=filter)
+        model = stats.Reranking.build_model(data)
         return render_log(
-            data, RenderReranking(filter=filter, model=model))
+            data, RenderReranking(model=model))
 
 
 @click.command()
@@ -248,24 +248,14 @@ class ChallengeChoice(common.ChallengeChoice):
               default='auto',
               help='Select which challenge to view (in the case where there'
               ' are multiple challenges in a single log)')
-@click.option('-f', '--filter', type=common.TokenFilter(),
-              default='alphaemoji',
-              help='Only style tokens which match this filter.')
 @click.option('-i', '--entropy_interval', default=10.0,
               help='Interval to show entropy differences over')
 def cli(log, verbose, challenge, **args):
     '''Pretty-print results from an LMChallenge game (using ANSI color codes).
     '''
     common.verbosity(verbose)
-
-    if len(log) == 0:
-        single_log = '-'
-    elif len(log) == 1:
-        single_log = log[0]
-    else:
-        raise click.ArgumentError('Can only process zero or one log files')
-
-    for line in challenge(common.read_jsonlines(single_log), **args):
+    for line in challenge(common.read_jsonlines(common.single_log(log)),
+                          **args):
         print(line)
 
 

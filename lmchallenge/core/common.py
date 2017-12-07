@@ -62,6 +62,12 @@ def fdiv_null(a, b):
     return None if b == 0 else float(a) / b
 
 
+def all_predicates(*predicates):
+    '''Combine predicates into a single predicate, testing if all of them match.
+    '''
+    return lambda x: all(predicate(x) for predicate in predicates)
+
+
 @contextlib.contextmanager
 def not_closing(f):
     '''A context manager that doesn't call close on the resource.
@@ -107,6 +113,17 @@ def read_jsonlines(filename):
     with open(filename) as f:
         for line in f:
             yield json.loads(line.rstrip('\r\n'))
+
+
+def dump_jsonlines(data, out=sys.stdout):
+    '''Dump data to stdout in jsonlines format.
+
+    data -- iterable of dict -- data to dump
+
+    out -- stream/file -- destination to write
+    '''
+    for d in data:
+        out.write(json.dumps(d, sort_keys=True) + "\n")
 
 
 def zip_special(a, b):
@@ -196,6 +213,13 @@ def peek(iterable):
         return (None, ())
 
 
+def is_selected(datum):
+    '''Is this datum selected (note that a missing 'select' key implicitly means
+    it should be selected.
+    '''
+    return datum.get('select', True)
+
+
 class JsonParam(click.ParamType):
     '''Click parameter type for parsing JSON.
     If the parameter is a valid filename, assumes that it is a path to a json
@@ -238,60 +262,6 @@ class ParamChoice(click.ParamType):
         return '(%s)' % ('|'.join(type(self).choices))
 
 
-class TokenFilter(ParamChoice):
-    '''Filters for classes of tokens.
-    '''
-    SPACE_PATTERN = regex.compile(r'\s')
-    ALPHA_PATTERN = regex.compile(r'\p{L}')
-    NONALPHA_PATTERN = regex.compile(r'[^\p{L}]')
-    EMOJI_PATTERN = emoji.get_emoji_regexp()
-    MARKER_PATTERN = regex.compile(r'@\p{Lu}*')
-
-    @staticmethod
-    def all(t):
-        '''Allow all tokens.'''
-        return True
-
-    @staticmethod
-    def nospace(t):
-        '''Exclude tokens that contain whitespace.'''
-        return TokenFilter.SPACE_PATTERN.search(t) is None
-
-    @staticmethod
-    def nomarker(t):
-        '''Exclude tokens that are 'markers' (such as @ALPHANUM).'''
-        return TokenFilter.MARKER_PATTERN.match(t) is None
-
-    @staticmethod
-    def alpha(t):
-        '''Include tokens that contain alphabetic characters.'''
-        return TokenFilter.nomarker(t) and \
-            (TokenFilter.ALPHA_PATTERN.search(t) is not None)
-
-    @staticmethod
-    def alphaonly(t):
-        '''Include tokens that are all alphabetic characters.'''
-        return TokenFilter.nomarker(t) and \
-            (TokenFilter.NONALPHA_PATTERN.search(t) is None)
-
-    @staticmethod
-    def alphaemoji(t):
-        '''Include tokens that are contain alphabetic characters,
-        or an emoji.'''
-        return (TokenFilter.nomarker(t) and
-                (TokenFilter.ALPHA_PATTERN.search(t) is not None)) or \
-            (TokenFilter.EMOJI_PATTERN.search(t) is not None)
-
-    @staticmethod
-    def emoji(t):
-        '''Include tokens that are an emoji.'''
-        return TokenFilter.EMOJI_PATTERN.search(t) is not None
-
-    name = 'token_filter'
-    choices = ['all', 'nospace', 'nomarker',
-               'alpha', 'alphaonly', 'alphaemoji', 'emoji']
-
-
 class ChallengeChoice(ParamChoice):
     '''Select processing to run on a generated log.
     '''
@@ -326,6 +296,22 @@ class ChallengeChoice(ParamChoice):
     @staticmethod
     def reranking(data, **args):
         raise NotImplementedError
+
+
+def single_log(logs):
+    '''When using @click.argument('log', nargs=-1), this limits the log to zero
+    (for stdin) or one log file.
+
+    logs -- a list of log files
+
+    returns -- exactly one log file name
+    '''
+    if len(logs) == 0:
+        return '-'
+    elif len(logs) == 1:
+        return logs[0]
+    else:
+        raise click.ArgumentError('Can only process zero or one log files')
 
 
 def qualified_name(x):
