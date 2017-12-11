@@ -11,7 +11,7 @@ import logging
 import random
 import itertools as it
 import functools as ft
-from .core import common, runner, errors
+from .core import common, errors, model
 
 
 # Helpers
@@ -37,7 +37,7 @@ def find_tokens(text, tokenizer):
 def get_completions(model, context, target):
     '''A generator of completions from a model, with successive "typed" prefixes.
 
-    model -- core.runner.BaseModel
+    model -- core.model.Model
 
     context -- string -- the text before the target
 
@@ -128,7 +128,7 @@ def evaluate_reranking(model, context, target,
 def run_tokens(model, data, train, tokenizer, evaluate):
     '''Run a per-token evaluation.
 
-    model -- core.runner.BaseModel
+    model -- core.model.Model
 
     data -- an iterable of "message" dictionaries, containing:
         text -- string -- the contents of the message
@@ -187,7 +187,7 @@ class PredictorSpec(click.ParamType):
             self.cmd = cmd
 
         def __call__(self, options):
-            return runner.ShellModel(self.cmd, options)
+            return model.ShellModel(self.cmd, options)
 
     name = 'predictor_spec'
 

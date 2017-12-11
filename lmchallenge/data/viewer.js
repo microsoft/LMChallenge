@@ -88,7 +88,8 @@ function summary_stats(results) {
     // Compute aggregates
     results.forEach(function (d) {
         stats.total += 1;
-        if (d.select) {
+        // N.B. null or true mean unfiltered!
+        if (d.select !== false) {
             stats.filter_included += 1;
             if (stats.wr) {
                 var before = d.verbatim === d.target;
@@ -297,10 +298,12 @@ function render_pretty(data) {
         .text(function (d) { return d.target; });
 
     // Style unselected cells
-    cells.classed("filtered", function(d) { return !d.select; });
+    // N.B. null or true mean unfiltered!
+    cells.classed("filtered", function(d) { return d.select === false; });
 
     // Only return selected cells
-    return cells.filter(function (d) { return d.select; });
+    // N.B. null or true mean unfiltered!
+    return cells.filter(function (d) { return d.select !== false; });
 }
 
 function render_wr_pretty(data) {
@@ -372,7 +375,7 @@ function render_entropy_pretty(data) {
     cells.attr("data-toggle", "tooltip")
         .attr("data-placement", "bottom")
         .attr("title", function (d) {
-            return to_fixed(d.logp, 3);
+            return d.target + " " + to_fixed(d.logp, 3);
         });
 
     // Colours

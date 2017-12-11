@@ -5,6 +5,7 @@
 '''
 
 import click
+from .core.model import FilteringWordModel, Model, WordModel  # NOQA
 from . import grep, pretty, run, stats, validate
 
 

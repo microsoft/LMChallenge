@@ -8,6 +8,21 @@ import emoji
 import io
 
 
+def test_unique_by():
+    # empty
+    assert list(common.unique_by([], lambda x: x)) == []
+
+    # unique strings by length
+    assert list(common.unique_by(
+        ["one", "two", "three", "four", "five", "six"], len)
+    ) == ["one", "three", "four"]
+
+    # check we're lazy (pass an infinite generator)
+    assert list(
+        it.islice(common.unique_by(it.count(0), lambda x: x), 0, 5)
+    ) == [0, 1, 2, 3, 4]
+
+
 def test_not_closing():
     s = io.StringIO()
     assert not s.closed

@@ -62,6 +62,17 @@ def fdiv_null(a, b):
     return None if b == 0 else float(a) / b
 
 
+def unique_by(iterable, func):
+    '''General itertools-like function for lazy-uniquing via a key function.
+    '''
+    added = set([])
+    for x in iterable:
+        fx = func(x)
+        if fx not in added:
+            added.add(fx)
+            yield x
+
+
 def all_predicates(*predicates):
     '''Combine predicates into a single predicate, testing if all of them match.
     '''
