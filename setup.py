@@ -32,9 +32,10 @@ setup(name='lmchallenge',
       [console_scripts]
       lmc=lmchallenge:cli
 
+      lmc-diff=lmchallenge.diff:cli
+      lmc-grep=lmchallenge.grep:cli
+      lmc-pretty=lmchallenge.pretty:cli
       lmc-run=lmchallenge.run:cli
       lmc-stats=lmchallenge.stats:cli
-      lmc-pretty=lmchallenge.pretty:cli
-      lmc-page=lmchallenge.page:cli
       lmc-validate=lmchallenge.validate:cli
       ''')

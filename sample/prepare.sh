@@ -26,4 +26,13 @@ cat ${DATA}/training-monolingual.tokenized.shuffled/news.en-00001* \
     | wc
 
 cat ${DATA}/heldout-monolingual.tokenized.shuffled/news.en.heldout-* \
-    > data/test.txt
+    > ${DATA}/test.txt
+
+cat ${DATA}/test.txt   \
+    | tr ' ' '\n'      \
+    | sort             \
+    | uniq -c          \
+    | sort -nr         \
+    | awk '{print $2}' \
+    | head -n 100000   \
+    > ${DATA}/test.vocab.100k.txt

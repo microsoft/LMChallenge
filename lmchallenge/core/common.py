@@ -231,6 +231,65 @@ def is_selected(datum):
     return datum.get('select', True)
 
 
+def zip_combine(common_keys, dict_iterables):
+    '''Combine a set of iterables, checking that they have identical values
+    for `common_keys`, nesting any other keys under the iterable's name.
+
+    e.g. zip_combine(["n"], dict(x=xs, y=ys))
+
+    | x              | y              | result                           |
+    |----------------|----------------|----------------------------------|
+    | {n:1, bar:"a"} | {n:1, bar:"b"} | {n:1, x:{bar:"a"}, y:{bar:"b"}}  |
+    | {n:2, bar:"a"} | {n:2}          | {n:1, x:{bar:"a"}, y:{}}         |
+    | {n:3, bar:"a"} | {n:4}          | throws ValueError                |
+
+    common_keys -- a list of keys that should be equal in the zipped dicts
+
+    dict_iterables -- dict(name -> data) -- the iterables to be zipped together
+
+    returns -- lazy sequence of dict, where the keys =
+               common_keys + dict_iterables.keys()
+    '''
+    common_keys = set(common_keys)
+    for items in zip(*dict_iterables.values()):
+        # The first iterable defines the expected values for common_keys
+        result = {k: items[0][k] for k in common_keys if k in items[0]}
+        for name, item in zip(dict_iterables.keys(), items):
+            # Check validity
+            for k in common_keys:
+                if result.get(k) != item.get(k):
+                    raise ValueError(
+                        'zip_combine mismatch between {} and {}'
+                        ' ("{}": {} != {})'.format(
+                            next(iter(dict_iterables.keys())), name,
+                            k, result.get(k), item.get(k)))
+            # Match - add in the result
+            result[name] = {k: v
+                            for k, v in item.items()
+                            if k not in common_keys}
+        yield result
+
+
+def zip_logs(**data):
+    '''Zip a dictionary of LMChallenge logs together, failing if the logs
+    don't "match up" (i.e. were generated from different source data).
+
+    The keys that must match (user, character, message, token, target, select)
+    are returned in the root element of each result, and the log-specific
+    results are included under the name of that log.
+
+    data -- dict(name -> data) -- the logs to be zipped together
+
+    returns -- lazy sequence of dict:
+               {"user", "character", "message", "token", "target", "select",
+               "log_1_name": {"logp"|"completions"|"results"...},
+               "log_2_name": {"logp"|"completions"|"results"...}}
+    '''
+    return zip_combine(
+        ["user", "character", "message", "token", "target", "select"],
+        data)
+
+
 class JsonParam(click.ParamType):
     '''Click parameter type for parsing JSON.
     If the parameter is a valid filename, assumes that it is a path to a json
@@ -280,21 +339,21 @@ class ChallengeChoice(ParamChoice):
     choices = ['auto', 'completion', 'entropy', 'reranking']
 
     @classmethod
-    def auto(cls, data, **args):
-        first, data = peek(data)
+    def auto(cls, *data, **args):
+        first, data = zip(*list(peek(d) for d in data))
 
-        is_completion = 'completions' in first
-        is_entropy = 'logp' in first
-        is_reranking = 'results' in first
+        is_completion = all('completions' in x for x in first)
+        is_entropy = all('logp' in x for x in first)
+        is_reranking = all('results' in x for x in first)
         if sum([is_completion, is_entropy, is_reranking]) != 1:
             raise Exception('Cannot infer log type from data')
 
         if is_completion:
-            return cls.completion(data, **args)
+            return cls.completion(*data, **args)
         elif is_entropy:
-            return cls.entropy(data, **args)
+            return cls.entropy(*data, **args)
         elif is_reranking:
-            return cls.reranking(data, **args)
+            return cls.reranking(*data, **args)
 
     @staticmethod
     def completion(data, **args):
@@ -362,3 +421,48 @@ def lookup_qualified_name(name, base_package=None):
         raise AttributeError(
             'module %s has no attribute %r'
             % (module, attr_names))
+
+
+class AnsiRender:
+    '''A helper for rendering in ANSI color codes.
+    Usage:
+
+    r = AnsiRender(sys.stdout)
+    r.color(r.RED, bold=True)
+    r.write("Hello\n")
+    r.default()
+    '''
+
+    BLACK = 0
+    RED = 1
+    GREEN = 2
+    YELLOW = 3
+    BLUE = 4
+    MAGENTA = 5
+    CYAN = 6
+    WHITE = 7
+    DEFAULT = 9
+
+    def __init__(self, outf):
+        self.f = outf
+        self.index = self.DEFAULT
+        self.bold = False
+
+    def default(self):
+        self.color(self.DEFAULT, False)
+
+    def color(self, index, bold):
+        if self.bold and not bold:
+            self.f.write(u'\x1b[0;%dm' % (30 + index))
+        elif bold and not self.bold:
+            self.f.write(u'\x1b[1;%dm' % (30 + index))
+        elif self.index != index:
+            self.f.write(u'\x1b[%dm' % (30 + index))
+        self.index = index
+        self.bold = bold
+
+    def write(self, s):
+        self.f.write(s)
+
+    def close(self):
+        self.f.close()

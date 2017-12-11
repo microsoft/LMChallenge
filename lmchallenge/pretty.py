@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Utility for pretty-printing the model performance from a ``wp``,
-``tc``, or ``ic`` log file.
+'''Utility for pretty-printing the model performance from an LMChallenge
+log file, in ANSI colour or HTML format.
 '''
 
 import click
@@ -21,67 +21,16 @@ from .core import common
 
 # Rendering utilities
 
-class AnsiRender:
-    '''A helper for rendering in ANSI color codes'''
-
-    BLACK = 0
-    RED = 1
-    GREEN = 2
-    YELLOW = 3
-    BLUE = 4
-    MAGENTA = 5
-    CYAN = 6
-    WHITE = 7
-    DEFAULT = 9
-
-    def __init__(self, outf):
-        self.f = outf
-        self.index = self.DEFAULT
-        self.bold = False
-
-    def default(self):
-        self.color(self.DEFAULT, False)
-
-    def color(self, index, bold):
-        if self.bold and not bold:
-            self.f.write(u'\x1b[0;%dm' % (30 + index))
-        elif bold and not self.bold:
-            self.f.write(u'\x1b[1;%dm' % (30 + index))
-        elif self.index != index:
-            self.f.write(u'\x1b[%dm' % (30 + index))
-        self.index = index
-        self.bold = bold
-
-    def write(self, s):
-        self.f.write(s)
-
-    def close(self):
-        self.f.close()
-
-
 class Renderer:
     '''Base class for rendering selected/unselected tokens.
     '''
     def __call__(self, datum, out):
-        '''Render a token the AnsiRender instance "out".
-
-        datum -- dict -- log datum to render
-
-        out -- AnsiRender -- output of rendering this token
-        '''
-        if common.is_selected(datum):
-            self._render(datum, out)
-        else:
-            out.color(AnsiRender.BLUE, False)
-            out.write(datum['target'])
-
-    def _render(self, datum, out):
         '''Called to render a token (which has not been "deselected") to the
         AnsiRender instance "out".
 
         datum -- dict -- log datum to render
 
-        out -- AnsiRender -- output of rendering
+        out -- common.AnsiRender -- output of rendering
         '''
         raise NotImplementedError
 
@@ -95,12 +44,20 @@ class RenderCompletion(Renderer):
     '''Pretty-print a token to show next-word-prediction/completion.
 
     If the token is next-word predicted, the entire token is green (and
-    bold if it is top-prediction).
+    bold if it is top-prediction). Otherwise, characters that must be typed
+    before the token is predicted @2 are coloured red, and completed
+    characters are yellow:
 
-    Otherwise, characters that must be typed before the token is predicted
-    @2 are coloured red, and completed characters are yellow.
+    +---------------------------+--------------+
+    | Case                      | Color        |
+    +===========================+==============+
+    | Next word prediction @1   | Bold Green   |
+    | Next word prediction @3   | Green        |
+    | Unpredicted characters @2 | Red          |
+    | Predicted characters @2   | Black (Grey) |
+    +---------------------------+--------------+
     '''
-    def _render(self, datum, out):
+    def __call__(self, datum, out):
         ranks = [common.rank(cs, datum['target'][i:]) or float('inf')
                  for i, cs in enumerate(datum['completions'])]
 
@@ -110,18 +67,18 @@ class RenderCompletion(Renderer):
             out.default()
             out.write(datum['target'])
         elif ranks[0] <= 1:
-            out.color(AnsiRender.GREEN, True)
+            out.color(out.GREEN, True)
             out.write(datum['target'])
         elif ranks[0] <= 3:
-            out.color(AnsiRender.GREEN, False)
+            out.color(out.GREEN, False)
             out.write(datum['target'])
         else:
             # Then completion
             typed = next((i for i, r in enumerate(ranks) if r <= 2),
                          len(datum['target']))
-            out.color(AnsiRender.RED, False)
+            out.color(out.RED, False)
             out.write(datum['target'][:typed])
-            out.color(AnsiRender.YELLOW, False)
+            out.color(out.BLACK, False)
             out.write(datum['target'][typed:])
 
     def html_setup(self, data, float_format):
@@ -150,21 +107,21 @@ class RenderEntropy(Renderer):
     def __init__(self, interval):
         self._interval = interval
 
-    def _render(self, datum, out):
+    def __call__(self, datum, out):
         logp = datum.get('logp')
         x = self._interval / 5
         if logp is None:
-            out.color(AnsiRender.MAGENTA, False)
+            out.color(out.MAGENTA, False)
         elif -logp < x:
-            out.color(AnsiRender.GREEN, True)
+            out.color(out.GREEN, True)
         elif -logp < 2 * x:
-            out.color(AnsiRender.GREEN, False)
+            out.color(out.GREEN, False)
         elif -logp < 3 * x:
-            out.color(AnsiRender.YELLOW, False)
+            out.color(out.YELLOW, False)
         elif -logp < 4 * x:
-            out.color(AnsiRender.RED, False)
+            out.color(out.RED, False)
         else:
-            out.color(AnsiRender.RED, True)
+            out.color(out.RED, True)
         out.write(datum['target'])
 
     def html_setup(self, data, float_format):
@@ -204,20 +161,20 @@ class RenderReranking(Renderer):
         return all(score < target_score
                    for t, score in scores if t != target)
 
-    def _render(self, datum, out):
+    def __call__(self, datum, out):
         target = datum['target']
         results = datum['results']
         pre = self.is_correct(target, results, lambda e, lm: e)
         post = self.is_correct(target, results, self._model)
         if (pre, post) == (False, False):
             # unchanged incorrect
-            out.color(AnsiRender.YELLOW, False)
+            out.color(out.YELLOW, False)
         elif (pre, post) == (False, True):
             # corrected
-            out.color(AnsiRender.GREEN, False)
+            out.color(out.GREEN, False)
         elif (pre, post) == (True, False):
             # miscorrected
-            out.color(AnsiRender.RED, False)
+            out.color(out.RED, False)
         else:
             # unchanged correct
             out.default()
@@ -368,7 +325,7 @@ def render_ansi(data, render_token):
 
     data -- a sequence of data from an LMC log (e.g. from read_jsonlines)
 
-    render_token -- callable(datum, AnsiRender) to render a single token
+    render_token -- callable(datum, common.AnsiRender) to render a single token
                     to the output AnsiRender
 
     returns -- a generator of ANSI-formatted lines
@@ -376,13 +333,17 @@ def render_ansi(data, render_token):
     for _, msg_data in it.groupby(
             data, lambda d: (d.get('user'), d.get('message'))):
         with io.StringIO() as f:
-            out = AnsiRender(f)
-            c = None
+            out = common.AnsiRender(f)
+            char_n = 0
             for datum in msg_data:
-                if c is not None and c < datum['character']:
+                if char_n < datum['character']:
                     out.write(' ')
-                c = datum['character'] + len(datum['target'])
-                render_token(datum, out)
+                char_n = datum['character'] + len(datum['target'])
+                if common.is_selected(datum):
+                    render_token(datum, out)
+                else:
+                    out.color(out.BLUE, bold=False)
+                    out.write(datum['target'])
             out.default()
             yield f.getvalue()
 
@@ -441,7 +402,7 @@ class OutputChoice(common.ParamChoice):
 
 
 @click.command()
-@click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
+@click.argument('log', nargs=-1, type=click.Path(dir_okay=False))
 @click.option('-v', '--verbose', default=0, count=True,
               help='How much human-readable detail to print to STDERR')
 @click.option('-c', '--challenge', type=ChallengeChoice(),

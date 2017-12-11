@@ -105,16 +105,84 @@ def test_character_tokenizer():
                  tokenize('1\t2#😀'))
 
 
+def test_is_selected():
+    assert common.is_selected(dict(target='foo', select=True))
+    assert not common.is_selected(dict(target='foo', select=False))
+    assert common.is_selected(dict(target='foo'))
+
+
+def test_zip_combine():
+    # As documented
+    for x, y, expected in [
+            # general case - non-common data is keyed under the name
+            (dict(n=1, bar="a"), dict(n=1, bar="b"),
+             dict(n=1, x=dict(bar="a"), y=dict(bar="b"))),
+
+            # non-common data can be different/missing
+            (dict(n=2, bar="a"), dict(n=2),
+             dict(n=2, x=dict(bar="a"), y=dict())),
+
+            # different common data generates an error
+            (dict(n=3, bar="a"), dict(n=4),
+             ValueError),
+
+            # mismatched-missing common data generates an error
+            (dict(n=3, bar="a"), dict(bar="a"),
+             ValueError),
+
+            # matched-missing common data is OK
+            (dict(bar="a"), dict(bar="b"),
+             dict(x=dict(bar="a"), y=dict(bar="b"))),
+    ]:
+        try:
+            assert list(common.zip_combine(['n'], dict(x=[x], y=[y]))) \
+                == [expected]
+        except ValueError as e:
+            assert expected == ValueError, e
+
+    assert list(common.zip_combine(['n'], dict())) == []
+    assert list(common.zip_combine(['n'], dict(x=[], y=[]))) == []
+    assert list(common.zip_combine(
+        ['a'],
+        dict(x=[dict(a=1), dict(a=2)], y=[dict(a=1)]))) \
+        == [dict(a=1, x={}, y={})],                     \
+        'short iterables are truncated, as per zip()'
+
+
+def test_zip_logs():
+    base = dict(user='a', character=1, message=2, token=3,
+                target='foo', select=True)
+    transforms = dict(user='b', character=10, message=20, token=30,
+                      target='bar', select=False)
+
+    log_a = [dict(logp=-2.5, **base)]
+    log_b = [dict(logp=-3.5, **base)]
+    for key, new_value in transforms.items():
+        new_base = base.copy()
+        new_base[key] = new_value
+        log_a.append(dict(logp=-2.5, **new_base))
+        log_b.append(dict(logp=-3.5, **new_base))
+
+    result = list(common.zip_logs(a=log_a, b=log_b))
+
+    assert len(result) == 1 + len(transforms)
+
+    assert result[0] == dict(
+        a=dict(logp=-2.5),
+        b=dict(logp=-3.5),
+        **base)
+
+
 class Foo:
     BAR = 123
 
 
 def test_qualified_name():
-    assert(common.is_qualified_name("abc.def:Ghi"))
+    assert common.is_qualified_name("abc.def:Ghi")
 
-    assert(not common.is_qualified_name("abc.def"))
+    assert not common.is_qualified_name("abc.def")
 
-    assert(common.is_qualified_name(common.qualified_name(Foo)))
+    assert common.is_qualified_name(common.qualified_name(Foo))
 
     assert_equal(Foo, common.lookup_qualified_name(
         common.qualified_name(Foo)))

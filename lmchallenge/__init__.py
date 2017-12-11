@@ -6,7 +6,7 @@
 
 import click
 from .core.model import FilteringWordModel, Model, WordModel  # NOQA
-from . import grep, pretty, run, stats, validate
+from . import diff, grep, pretty, run, stats, validate
 
 
 @click.group()
@@ -17,6 +17,8 @@ def cli():
     pass
 
 
+# Changes to this list should be synced with setup.py
+cli.add_command(diff.cli, 'diff')
 cli.add_command(grep.cli, 'grep')
 cli.add_command(pretty.cli, 'pretty')
 cli.add_command(run.cli, 'run')
