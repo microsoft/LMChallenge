@@ -218,7 +218,9 @@ class Completion(Accumulator):
         if all_completions is not None:
             target = datum['target']
             for start, completions in enumerate(all_completions):
-                if common.rank(completions, target, max_rank=self._max_rank):
+                if common.rank(completions,
+                               target[start:],
+                               max_rank=self._max_rank):
                     self._characters += len(datum['target']) - start
                     self._tokens += 1
                     break
