@@ -72,7 +72,7 @@ class BackoffContext:
         returns -- a generator of string tokens
         '''
         return (prediction
-                for context, _ in self._context_and_weight
+                for context, _ in self._context_and_weight[::-1]
                 for prediction in context.predictions())
 
 
