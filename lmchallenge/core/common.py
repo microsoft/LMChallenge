@@ -97,7 +97,7 @@ def not_closing(f):
     yield f
 
 
-def open(filename):
+def auto_open(filename):
     '''Open a file, and return it (should be used in a ``with``).
 
     filename -- string -- path to a file (or gzip), or "-" for stdin
@@ -121,7 +121,7 @@ def read_jsonlines(filename):
     filename -- string -- path to a file (jsonlines, or gzipped jsonlines),
                           or "-" for stdin.
     '''
-    with open(filename) as f:
+    with auto_open(filename) as f:
         for line in f:
             yield json.loads(line.rstrip('\r\n'))
 
@@ -241,7 +241,7 @@ class JsonParam(click.ParamType):
     def convert(self, value, param, ctx):
         try:
             if os.path.exists(value):
-                with open(value) as f:
+                with auto_open(value) as f:
                     return json.load(f)
             else:
                 return json.loads(value)
@@ -322,7 +322,7 @@ def single_log(logs):
     elif len(logs) == 1:
         return logs[0]
     else:
-        raise click.ArgumentError('Can only process zero or one log files')
+        raise ValueError('Can only process zero or one log files')
 
 
 def qualified_name(x):
