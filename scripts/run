@@ -20,26 +20,44 @@ def sh(cmd, **args):
 
 
 def image_tag(image):
-    return dict(prod='lmchallegne',
-                notebook='lmchallenge-notebook',
-                dev='lmchallenge-dev').get(image, image)
+    return dict(
+        prod='lmchallenge',
+        base='lmchallenge-base',
+        dev='lmchallenge-dev',
+        notebook='lmchallenge-notebook'
+    ).get(image, image)
 
 
 def build(args):
     '''Build or pull the Docker image, which may be:
     "prod" -- build the production image
+    "base" -- build the base image
     "dev"  -- build the development image
     "other/name" -- pull a remote image
     '''
-    if args.image in ['prod', 'dev']:
-        # dev depends on prod, so we must build this first
-        sh('docker build --rm -t lmchallenge .')
-        if args.image == 'dev':
-            sh('docker build --rm -t lmchallenge-dev -f scripts/Dockerfile.dev .')
-    elif args.image == 'notebook':
-        sh('docker build --rm -t lmchallenge-notebook -f scripts/Dockerfile.notebook .')
+    if args.image in ['prod', 'base', 'dev', 'notebook']:
+        sh('docker build --rm ${FLAGS} -t ${TAG} -f ${DOCKERFILE} .',
+           TAG=image_tag(args.image),
+           FLAGS='--no-cache' if args.no_cache else '',
+           DOCKERFILE=(
+               'Dockerfile'
+               if args.image == 'prod' else
+               ('scripts/Dockerfile.' + args.image)))
     else:
         sh('docker pull %s' % args.image)
+
+
+def refreeze(args):
+    '''Refreeze requirements.txt.
+    '''
+    if args.image != 'base':
+        sys.stderr.write(
+            'WARNING: freezing dependencies should generally be done'
+            ' from the "base" image, not "{}"\n'.format(args.image))
+    sh('docker run --rm -i -v ${WORK}:/work -w /work'
+       ' ${TAG} pip freeze > requirements.txt',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image))
 
 
 def run(args):
@@ -55,9 +73,10 @@ def run(args):
 def test(args):
     'Run unit & functional tests.'
     sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
-       ' python3 setup.py test',
+       ' pytest ${PYTEST_ARGS}',
        WORK=os.getcwd(),
-       TAG=image_tag(args.image))
+       TAG=image_tag(args.image),
+       PYTEST_ARGS=' '.join(args.pytest_args))
 
 
 def flake(args):
@@ -140,26 +159,34 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument(
     '-i', '--image',
-    help='Which image to use: "prod" | "dev" | "notebook" | "other/name"',
+    help='Which image to use:'
+    ' "base" | "prod" | "dev" | "notebook" | "other/name"',
     type=str,
     default='dev'
 )
 subparsers = parser.add_subparsers()
 
 sparser = subparsers.add_parser('build', help=build.__doc__)
+sparser.add_argument('--no-cache', action='store_true',
+                     help='rebuild the image from scratch')
 sparser.set_defaults(action=build)
+
+sparser = subparsers.add_parser('refreeze', help=refreeze.__doc__)
+sparser.set_defaults(action=refreeze)
 
 sparser = subparsers.add_parser('run', help=run.__doc__)
 sparser.add_argument('command', nargs='*')
 sparser.set_defaults(action=run)
 
 sparser = subparsers.add_parser('test', help=test.__doc__)
+sparser.add_argument('pytest_args', nargs='*', default=[])
 sparser.set_defaults(action=test)
 
 sparser = subparsers.add_parser('flake', help=flake.__doc__)
 sparser.set_defaults(action=flake)
 
 sparser = subparsers.add_parser('check', help=check.__doc__)
+sparser.add_argument('pytest_args', nargs='*', default=[])
 sparser.set_defaults(action=check)
 
 sparser = subparsers.add_parser('doc', help=doc.__doc__)

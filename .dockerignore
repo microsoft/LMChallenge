@@ -4,11 +4,12 @@
 
 # Include specific files & folders
 
+!lmchallenge/*
 !README.md
+!requirements*
 !setup.py
 !setup.cfg
 !version.txt
-!lmchallenge/*
 
 # Re-exclude some files
 

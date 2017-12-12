@@ -417,7 +417,8 @@ def humanize(stats):
     r = dict()
 
     # General info
-    r['log'] = stats.pop('log')
+    if 'log' in stats:
+        r['log'] = stats.pop('log')
     r['fingerprint'] = Hash.format(stats.pop('fingerprint'))
     r['users'] = stats.pop('users')
     tokens = stats.pop('tokens')

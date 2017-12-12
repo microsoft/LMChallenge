@@ -21,7 +21,6 @@ We include support for building a Docker image that makes it easier to get start
 Tests are currently very much incomplete (please help fix this), but they are run with:
 
     ./scripts/run build
-    ./scripts/run -i prod test
     ./scripts/run check
 
 ### Documentation
@@ -45,12 +44,12 @@ For now, we don't use an internal registry, but you can send things around manua
 
 ### Publishing
 
- 1. ensure you've run the pre-publish checks `./scripts/run check`
- 2. check that you're happy with `version.txt`
- 3. `python3 setup.py sdist upload -r pypi`
-   - you must first set up pypi & GPG credentials
- 4. `git push origin HEAD:refs/tags/$(cat version.txt)`
- 5. update, commit & push `version.txt`
+ 1. (optionally) update requirements `./scripts/run -i base build --no-cache && ./scripts/run -i base refreeze`
+ 2. ensure you've run the pre-publish checks `./scripts/run check`
+ 3. check that you're happy with `version.txt`
+ 4. `python3 setup.py sdist upload -r pypi` (you must first set up pypi & GPG credentials)
+ 5. `git push origin HEAD:refs/tags/$(cat version.txt)`
+ 6. update, commit & push `version.txt`
 
 
 ## Ideas

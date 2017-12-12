@@ -23,7 +23,7 @@ WORD_TOKENIZER = regex.compile(
 
 
 CHARACTER_TOKENIZER = regex.compile(
-    '.'
+    '.|\n', flags=regex.MULTILINE
 )
 '''A Unicode character tokenizer regex.'''
 
@@ -54,12 +54,6 @@ def verbosity(level):
         format='%(levelname)s\t%(message)s',
         level=LOG_LEVELS[min(len(LOG_LEVELS) - 1, level)],
     )
-
-
-def fdiv_null(a, b):
-    '''Return a/b, or ``None`` if b is 0.
-    '''
-    return None if b == 0 else float(a) / b
 
 
 def unique_by(iterable, func):

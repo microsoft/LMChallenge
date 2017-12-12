@@ -5,6 +5,10 @@ import collections
 import argparse
 import sys
 import math
+import contextlib
+import dbm
+import tempfile
+import struct
 import itertools as it
 import lmchallenge as lmc
 
@@ -198,7 +202,56 @@ def parse_ngram(line):
     return tuple(ngram), int(count)
 
 
-def sequence(lines, order):
+class DictCounter:
+    '''A simple, memory-hungry counter, backed by a Python dictionary.
+    '''
+    def __init__(self):
+        self._d = collections.defaultdict(int)
+
+    @classmethod
+    @contextlib.contextmanager
+    def open(cls):
+        yield cls()
+
+    def increment(self, key):
+        self._d[key] += 1
+
+    def items(self):
+        return self._d.items()
+
+
+class DbmCounter:
+    '''A slow counter backed by a database.
+    '''
+    FORMAT = '>I'
+
+    def __init__(self, db):
+        self._db = db
+
+    @classmethod
+    @contextlib.contextmanager
+    def open(cls):
+        with tempfile.NamedTemporaryFile() as f:
+            with dbm.open(f.name, 'n') as db:
+                yield cls(db)
+
+    def increment(self, key):
+        key = key.encode('utf8')
+        count = self._db.get(key)
+        count = (1
+                 if count is None else
+                 struct.unpack(self.FORMAT, count)[0] + 1)
+        self._db[key] = struct.pack(self.FORMAT, count)
+
+    def items(self):
+        key = self._db.firstkey()
+        while key is not None:
+            yield (key.decode('utf8'),
+                   struct.unpack(self.FORMAT, self._db[key])[0])
+            key = self._db.nextkey(key)
+
+
+def sequence(lines, order, counter=None):
     '''"Sequence up" the input lines into ngrams of the order "order".
 
     lines -- an iterable of lists of tokens
@@ -210,34 +263,40 @@ def sequence(lines, order):
                note that the start-of-sequence is padded with (order-1)
                ASCII group separator (GS) \x1D
     '''
-    ngrams = collections.defaultdict(int)
+    if counter is None:
+        counter = DictCounter.open()
     pad = list(it.repeat('\x1d', order - 1))
     for line in lines:
         line = pad + line
         for n in range(order - 1, len(line)):
             for i in range(order):
-                ngrams['\x1e'.join(line[(n - i):(n + 1)])] += 1
-    return ngrams.items()
+                counter.increment('\x1e'.join(line[(n - i):(n + 1)]))
+    return counter.items()
 
 
 # Command line wrappers
 
-def sequence_words_cli(order):
+def sequence_cli(order, disk, tokenizer):
+    '''Command line version of `sequence`, applying a tokenizer regex,
+    between stdin & stdout.
+    '''
+    lines = ([m.group(0) for m in tokenizer.finditer(line.rstrip('\n'))]
+             for line in sys.stdin)
+    with (DbmCounter if disk else DictCounter).open() as counter:
+        for ngram, count in sequence(lines, order, counter):
+            sys.stdout.write('{}\x1e{}\n'.format(ngram, count))
+
+
+def sequence_words_cli(order, disk):
     '''Command line version of `sequence` for words, between stdin & stdout.
     '''
-    lines = (line.rstrip('\n').split(' ') for line in sys.stdin)
-    ngrams = sequence(lines, order)
-    for ngram, count in ngrams:
-        sys.stdout.write('{}\x1e{}\n'.format(ngram, count))
+    sequence_cli(order, disk, lmc.core.common.WORD_TOKENIZER)
 
 
-def sequence_chars_cli(order):
+def sequence_chars_cli(order, disk):
     '''Command line version of `sequence` for characters, between stdin & stdout.
     '''
-    lines = (list(line.rstrip('\n')) for line in sys.stdin)
-    ngrams = sequence(lines, order)
-    for ngram, count in ngrams:
-        sys.stdout.write('{}\x1e{}\n'.format(ngram, count))
+    sequence_cli(order, disk, lmc.core.common.CHARACTER_TOKENIZER)
 
 
 def prune_cli(count):
@@ -272,11 +331,15 @@ if __name__ == '__main__':
 
     s = subparsers.add_parser('sequence-words', help='sequence up word ngrams')
     s.add_argument('order', type=int, help='order to sequence up to')
+    s.add_argument('-d', '--disk', action='store_true',
+                   help='use a slow on-disk sequencer')
     s.set_defaults(execute=sequence_words_cli)
 
     s = subparsers.add_parser('sequence-chars',
                               help='sequence up character ngrams')
     s.add_argument('order', type=int, help='order to sequence up to')
+    s.add_argument('-d', '--disk', action='store_true',
+                   help='use a slow on-disk sequencer')
     s.set_defaults(execute=sequence_chars_cli)
 
     s = subparsers.add_parser('prune', help='prune down ngrams')

@@ -4,8 +4,10 @@
 '''LM Challenge - language modelling evaluation suite.
 '''
 
-import click
 from .core.model import FilteringWordModel, Model, WordModel  # NOQA
+from .core.common import WORD_TOKENIZER, CHARACTER_TOKENIZER  # NOQA
+
+import click
 from . import diff, grep, pretty, run, stats, validate
 
 

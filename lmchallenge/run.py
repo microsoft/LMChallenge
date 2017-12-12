@@ -47,7 +47,7 @@ def get_completions(model, context, target):
                while typing out ``target``
     '''
     for i in range(len(target)):
-        yield [c[0] for c in model.predict(context + target[:i], None)]
+        yield [w for w, s in model.predict(context + target[:i], None)]
 
 
 def get_logp(model, context, target):
@@ -57,7 +57,7 @@ def get_logp(model, context, target):
     if 2 <= len(results):
         logging.warning('multiple results returned for a single candidate')
     try:
-        return next(r[1] for r in results if r[0] == target)
+        return next(s for w, s in results if w == target)
     except StopIteration:
         return None
 
@@ -174,13 +174,12 @@ def run_tokens(model, data, train, tokenizer, evaluate):
 class PredictorSpec(click.ParamType):
     '''Loads a predictor, either from a Python module or a shell command.
     '''
-
     class PythonModel:
         def __init__(self, ctor):
             self.ctor = ctor
 
         def __call__(self, options):
-            return self.ctor(options.copy())
+            return self.ctor(**options)
 
     class ShellModel:
         def __init__(self, cmd):
@@ -191,14 +190,14 @@ class PredictorSpec(click.ParamType):
 
     name = 'predictor_spec'
 
+    def get_metavar(self, param):
+        return 'SPEC'
+
     def convert(self, value, param, ctx):
         if common.is_qualified_name(value):
             return self.PythonModel(common.lookup_qualified_name(value))
         else:
             return self.ShellModel(value)
-
-    def get_metavar(self, param):
-        return 'SPEC'
 
 
 class InputFormat(common.ParamChoice):

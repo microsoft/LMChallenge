@@ -6,6 +6,9 @@ with open('version.txt', 'r') as v:
 with open('README.md', 'r') as r:
     readme = r.read()
 
+with open('requirements.txt', 'r') as r:
+    requirements = list(x.strip() for x in r)
+
 setup(name='lmchallenge',
       version=version,
       description='LM Challenge'
@@ -18,16 +21,7 @@ setup(name='lmchallenge',
       license='MIT',
 
       packages=['lmchallenge', 'lmchallenge.core'],
-      install_requires=[
-          'click',
-          'emoji',
-          'jsonschema',
-          'regex',
-      ],
-      tests_require=[
-          'nose',
-      ],
-      test_suite='nose.collector',
+      install_requires=requirements,
       entry_points='''
       [console_scripts]
       lmc=lmchallenge:cli

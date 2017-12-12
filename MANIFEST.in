@@ -1,2 +1,2 @@
-include version.txt README.md LICENSE
+include version.txt README.md requirements.txt LICENSE
 recursive-include lmchallenge *.css *.html *.js *.schema
