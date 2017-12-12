@@ -93,23 +93,29 @@ COPYRIGHT_NOTICE = [
 ]
 
 
+def check_copyright(path):
+    # Strict verbatim test - the file must start with these lines
+    with open(path) as f:
+        lines = list(l.rstrip('\n') for l in it.islice(f, 2))
+    if lines != COPYRIGHT_NOTICE:
+        sys.stderr.write(
+            ('Error! Bad copyright notice in {}:'
+             '   {}\n').format(
+                 path,
+                 '\\n'.join(lines)
+            ))
+    return lines == COPYRIGHT_NOTICE
+
+
 def copyright(args):
     'Check for copyright headers.'
-    errors = 0
-    for root, _, files in os.walk('lmchallenge'):
-        for name in (f for f in files if os.path.splitext(f)[-1] == '.py'):
-            path = os.path.join(root, name)
-            # Strict verbatim test - the file must start with these lines
-            with open(path) as f:
-                lines = list(l.rstrip('\n') for l in it.islice(f, 2))
-            if lines != COPYRIGHT_NOTICE:
-                sys.stderr.write(
-                    ('Error! Bad copyright notice in {}:'
-                     '   {}\n').format(
-                         path,
-                         '\\n'.join(lines)
-                    ))
-                errors += 1
+    errors = sum(
+        1
+        for base in ['lmchallenge', 'sample']
+        for root, _, files in os.walk(base)
+        for name in files
+        if os.path.splitext(name)[-1] == '.py'
+        if not check_copyright(os.path.join(root, name)))
     if errors:
         exit(errors)
 
