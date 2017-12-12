@@ -1,5 +1,4 @@
 -r requirements-base.txt
 flake8
 pytest
-nose
 scipy

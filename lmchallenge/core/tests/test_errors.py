@@ -2,7 +2,6 @@
 # Licensed under the MIT license.
 
 from .. import errors
-from nose.tools import eq_, assert_less, assert_less_equal
 from unittest.mock import MagicMock
 import random
 import math
@@ -20,10 +19,10 @@ def test_corrupt():
     rand.choice = MagicMock(
         side_effect=['q', '_', 'Z']
     )
-    eq_(errors.corrupt(config, "hello", rand), "hql_Z")
+    assert errors.corrupt(config, "hello", rand) == "hql_Z"
 
-    eq_(errors.score(config, "hql_Z", "hello"),
-        3 * math.log(p_anykey) + 2 * math.log(1 - p_anykey))
+    assert errors.score(config, "hql_Z", "hello") \
+        == 3 * math.log(p_anykey) + 2 * math.log(1 - p_anykey)
 
 
 def test_corrupt_fuzz():
@@ -33,21 +32,24 @@ def test_corrupt_fuzz():
                        for j in range(random.randint(1, 10)))
 
         input_word = errors.corrupt(config, word)
-        eq_(len(word), len(input_word))
+        assert len(word) == len(input_word)
 
         input_score = errors.score(config, input_word, input_word)
-        assert_less(input_score, 0)
+        assert input_score < 0
+
         score = errors.score(config, input_word, word)
-        assert_less_equal(score, input_score)
+        assert score <= input_score
 
 
 def test_search():
-    eq_(errors.Search([])("csn", 3), [])
-    eq_(errors.Search(["can", "cs", "dam", "csn", "csna"])("csn", 3),
-        ["csn", "can", "dam"])
+    assert errors.Search([])("csn", 3) == []
+    assert errors.Search(
+        ["can", "cs", "dam", "csn", "csna"])("csn", 3) \
+        == ["csn", "can", "dam"]
     # if there is a tie, the first result in the list should be retained
-    eq_(errors.Search(["baa", "bba", "aba", "aab", "aaa", "caa"])("aaa", 3),
-        ["aaa", "baa", "aba"])
+    assert errors.Search(
+        ["baa", "bba", "aba", "aab", "aaa", "caa"])("aaa", 3) \
+        == ["aaa", "baa", "aba"]
 
 
 def test_search_fuzz():
@@ -68,6 +70,6 @@ def test_search_fuzz():
             for w in words:
                 score = errors.score(config, corrupt, w)
                 if w in top:
-                    assert_less_equal(last_top_score, score)
+                    assert last_top_score <= score
                 else:
-                    assert_less_equal(score, last_top_score)
+                    assert score <= last_top_score
