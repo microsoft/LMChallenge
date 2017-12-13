@@ -129,11 +129,15 @@ def check(args):
 
 
 def doc(args):
-    'Generatic documentation.'
+    'Generate documentation.'
+    OUT = 'site/'
     sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
-       ' make -C doc clean html',
+       ' env PYTHONPATH=.'
+       ' pdoc --overwrite --html --html-dir ${OUT} lmchallenge',
        WORK=os.getcwd(),
-       TAG=image_tag(args.image))
+       TAG=image_tag(args.image),
+       OUT=OUT)
+    sys.stderr.write('Documentation generated: {}\n'.format(OUT))
 
 
 def notebook(args):
@@ -170,6 +174,7 @@ parser.add_argument(
     type=str,
     default='dev'
 )
+parser.set_defaults(action=lambda args: parser.print_help())
 subparsers = parser.add_subparsers()
 
 sparser = subparsers.add_parser('build', help=build.__doc__)

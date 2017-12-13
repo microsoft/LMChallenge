@@ -4,12 +4,33 @@
 '''LM Challenge - language modelling evaluation suite.
 '''
 
+# Module
+
+import click
+from . import core, diff, grep, pretty, run, stats, validate
 from .core.model import FilteringWordModel, Model, WordModel  # NOQA
 from .core.common import WORD_TOKENIZER, CHARACTER_TOKENIZER  # NOQA
 
-import click
-from . import diff, grep, pretty, run, stats, validate
+__all__ = [
+    # submodules
+    'core',
+    'grep',
+    'diff',
+    'pretty',
+    'run',
+    'stats',
+    'validate',
 
+    # specifics
+    'Model',
+    'WordModel',
+    'FilteringWordModel',
+    'WORD_TOKENIZER',
+    'CHARACTER_TOKENIZER',
+]
+
+
+# Command line interface
 
 @click.group()
 def cli():

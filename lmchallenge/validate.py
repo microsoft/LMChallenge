@@ -1,7 +1,17 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Check that logs confirm to the correct LMChallenge schema.
+'''Check that logs confirm to the correct LMChallenge schema (expressed as a
+JSON schema - see [http://json-schema.org](http://json-schema.org)).
+
+This can be used to check that a method of generating log files other than
+`lmchallenge.run` (e.g. using your own parallel execution framework) is
+compatible with the LMChallenge analysis tools.
+
+N.B. This validator can only check the format of the log, not the _fairness_ of
+the log. An example of an unfair log is a word entropy log where the total
+probability over the specified vocabulary for a given context is not equal to
+one.
 '''
 
 import click
@@ -12,11 +22,26 @@ from .core import common
 
 
 def schema():
-    '''Returns the log instance schema as a Python object, loaded from the schema
-    definition file, within the LMChallenge package.
+    '''Returns the log instance schema as a Python object.
+
+    (Loaded from the schema definition file within the LMChallenge package.)
     '''
     with open(os.path.join(os.path.dirname(__file__), 'log.schema')) as f:
         return json.load(f)
+
+
+def validate(data):
+    '''Check that a loaded log conforms to the schema, using `jsonschema`.
+
+    `data` -- iterable of log events, each of which should conform to
+    `lmchallenge.validate.schema`
+
+    `raises` -- `jsonschema.exceptions.ValidationError` if the log does
+    not conform
+    '''
+    log_schema = schema()
+    for datum in data:
+        jsonschema.validate(datum, log_schema)
 
 
 @click.command()
@@ -30,10 +55,8 @@ def cli(log, verbose):
 
     log = log or ['-']
 
-    log_schema = schema()
     for single_log in log:
-        for line in common.read_jsonlines(single_log):
-            jsonschema.validate(line, log_schema)
+        validate(common.read_jsonlines(single_log))
 
 
 __doc__ += common.shell_docstring(cli, 'lmc validate')

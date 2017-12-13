@@ -34,12 +34,10 @@ def shell_docstring(command, name):
 
       __doc__ += shell_docstring(cli, 'command-name')
     '''
-    # Must have a leading newline for Sphinx to process this correctly
-    text = '\n'
-    text += '**%s**::\n\n  ' % name
-    text += click.Context(command, info_name=name)\
-                 .get_help()\
-                 .replace('\n', '\n  ')
+    # Comment and indentation to recognize code segment
+    text = '\nCommand line:\n\n    #!sh'
+    text += '\n    ' + click.Context(command, info_name=name) \
+                            .get_help().replace('\n', '\n    ')
     text += '\n'
     return text
 

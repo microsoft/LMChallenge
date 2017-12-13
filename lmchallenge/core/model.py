@@ -95,8 +95,11 @@ class WordModel(Model):
         predict_word(context, prefix) -> results
         score_word(context, candidates) -> results
     '''
-    def __init__(self, token_pattern=common.WORD_TOKENIZER.pattern):
-        self._tokenizer = regex.compile(token_pattern)
+    def __init__(self, token_pattern=None):
+        if token_pattern is None:
+            self._tokenizer = common.WORD_TOKENIZER
+        else:
+            self._tokenizer = regex.compile(token_pattern)
 
     def predict(self, context, candidates):
         tokens = list(self._tokenizer.finditer(context))
