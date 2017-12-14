@@ -3,12 +3,14 @@
 
 from . import eg_models
 import lmchallenge as lmc
-import functools as ft
 import math
 
 
 def expect_close(expected, actual):
-    assert abs(expected - actual) < 1e-8
+    if expected is None:
+        assert actual is None
+    else:
+        assert abs(expected - actual) < 1e-8
 
 
 def expect_partial_match(expected, actual):
@@ -25,19 +27,26 @@ def expect_meta(expected, actual):
     assert len(expected) == len(actual)
 
 
-def expect_logp(expected, actual):
-    for n, logp in enumerate(expected):
-        if logp is None:
-            assert actual[n]['logp'] is None
-        else:
-            expect_close(logp, actual[n]['logp'])
-    assert len(expected) == len(actual)
+def expect_logp(expected, actual_log):
+    for logp, actual in zip(expected, actual_log):
+        expect_close(logp, actual['logp'])
+    assert len(expected) == len(actual_log)
 
 
-def expect_completions(expected, actual):
-    for n, completions in enumerate(expected):
-        assert actual[n]['completions'] == completions
-    assert len(expected) == len(actual)
+def expect_completions(expected, actual_log):
+    for expected_completions, actual in zip(expected, actual_log):
+        assert expected_completions == actual['completions']
+    assert len(expected) == len(actual_log)
+
+
+def expect_results(expected, actual_log):
+    for expected_results, actual in zip(expected, actual_log):
+        remaining = {word: lm_score
+                     for word, _, lm_score in actual['results']}
+        for word, score in expected_results:
+            expect_close(score, remaining.pop(word))
+        assert all(score is None for score in remaining.values())
+    assert len(expected) == len(actual_log)
 
 
 class PlainData:
@@ -108,13 +117,7 @@ class PlainCharData:
 def test_simple_model_we():
     # run
 
-    results = list(lmc.run.run_tokens(
-        eg_models.SimpleModel(),
-        PlainData.DATA,
-        train=False,
-        tokenizer=lmc.WORD_TOKENIZER,
-        evaluate=lmc.run.evaluate_entropy
-    ))
+    results = list(lmc.we(eg_models.SimpleModel(), PlainData.DATA))
     expect_meta(PlainData.META, results)
 
     expect_logp(
@@ -124,14 +127,14 @@ def test_simple_model_we():
 
     # stats
 
-    stats = lmc.stats.stats(results)
+    stats = lmc.stats.stats(results, human=False)
     expect_partial_match(PlainData.STATS, stats)
     expect_partial_match(
         dict(tokens=5,
              sum=(4 * -math.log(0.25) + -math.log(0.5))),
         stats['entropy'])
 
-    human_stats = lmc.stats.humanize(stats)
+    human_stats = lmc.stats.stats(results, human=True)
     expect_partial_match(PlainData.HUMAN_STATS, human_stats)
     expect_partial_match(
         dict(hit=5/7,
@@ -142,13 +145,7 @@ def test_simple_model_we():
 def test_simple_model_ce():
     # run
 
-    results = list(lmc.run.run_tokens(
-        eg_models.SimpleCharModel(),
-        PlainCharData.DATA,
-        train=False,
-        tokenizer=lmc.CHARACTER_TOKENIZER,
-        evaluate=lmc.run.evaluate_entropy,
-    ))
+    results = list(lmc.ce(eg_models.SimpleCharModel(), PlainCharData.DATA))
     expect_meta(PlainCharData.META, results)
     expect_logp(
         [None if p is None else math.log(p)
@@ -159,14 +156,14 @@ def test_simple_model_ce():
 
     # stats
 
-    stats = lmc.stats.stats(results)
+    stats = lmc.stats.stats(results, human=False)
     expect_partial_match(PlainCharData.STATS, stats)
     expect_partial_match(
         dict(tokens=4,
              sum=(-math.log(0.5) + -math.log(0.25) + 2 * -math.log(0.125))),
         stats['entropy'])
 
-    human_stats = lmc.stats.humanize(stats)
+    human_stats = lmc.stats.stats(results, human=True)
     expect_partial_match(PlainCharData.HUMAN_STATS, human_stats)
     expect_partial_match(
         dict(hit=0.5,
@@ -179,15 +176,7 @@ def test_simple_model_ce():
 def test_simple_model_wc():
     # run
 
-    results = list(lmc.run.run_tokens(
-        eg_models.SimpleModel(),
-        PlainData.DATA,
-        train=False,
-        tokenizer=lmc.WORD_TOKENIZER,
-        evaluate=ft.partial(
-            lmc.run.evaluate_completions, next_word_only=False
-        ),
-    ))
+    results = list(lmc.wc(eg_models.SimpleModel(), PlainData.DATA))
     expect_meta(PlainData.META, results)
 
     w = ['the', 'a', 'cat']
@@ -198,7 +187,7 @@ def test_simple_model_wc():
 
     # stats
 
-    stats = lmc.stats.stats(results)
+    stats = lmc.stats.stats(results, human=False)
     expect_partial_match(PlainData.STATS, stats)
     expect_partial_match(
         dict(
@@ -215,7 +204,7 @@ def test_simple_model_wc():
             characters=4,
         ), stats['completion'])
 
-    human_stats = lmc.stats.humanize(stats)
+    human_stats = lmc.stats.stats(results, human=True)
     expect_partial_match(PlainData.HUMAN_STATS, human_stats)
     expect_partial_match(
         dict(
@@ -231,3 +220,36 @@ def test_simple_model_wc():
             tokens=2/7,  # the, a
             characters=4/19,
         ), human_stats['completion'])
+
+
+def test_simple_model_wr():
+    # run
+
+    results = list(lmc.wr(
+        eg_models.SimpleModel(), PlainData.DATA,
+        ['the', 'cat', 'fat']))
+    expect_meta(PlainData.META, results)
+
+    result_the = ('the', math.log(0.5))
+    result_cat = ('cat', math.log(0.25))
+    result_a = ('a', math.log(0.25))
+    result_ate = ('ate', None)
+    result_The = ('The', None)
+    result_fat = ('fat', None)
+    expect_results(
+        [[result_the, result_cat, result_fat],
+         [result_cat, result_the, result_fat],
+         [result_ate, result_the, result_cat, result_fat],
+         [result_a],
+         [result_cat, result_the, result_fat],
+         [result_The, result_the, result_cat, result_fat],
+         [result_cat, result_the, result_fat]],
+        results)
+
+    # stats
+    # - it is hard to disentangle the effects of randomness here, so we're
+    # not checking any actual statistics
+    expect_partial_match(
+        PlainData.STATS, lmc.stats.stats(results, human=False))
+    expect_partial_match(
+        PlainData.HUMAN_STATS, lmc.stats.stats(results, human=True))

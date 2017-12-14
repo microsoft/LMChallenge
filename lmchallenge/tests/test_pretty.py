@@ -4,8 +4,10 @@
 from .. import pretty
 import json
 import math
+import pytest
 
 
+@pytest.mark.slow
 def test_get_viewer_files():
     # Mainly just check we don't crash!
     for name, data in pretty._get_viewer_files().items():

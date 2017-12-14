@@ -323,7 +323,7 @@ def _log_combined_score(data, model):
 def render_ansi(data, render_token):
     '''Render an LMC log to a colourized line-based output.
 
-    data -- a sequence of data from an LMC log (e.g. from read_jsonlines)
+    data -- a sequence of data from an LMC log
 
     render_token -- callable(datum, common.AnsiRender) to render a single token
                     to the output AnsiRender
@@ -351,7 +351,7 @@ def render_ansi(data, render_token):
 def render_html(data, renderer, float_format):
     '''Render an LMC log to a standalone (and mildly interactive) HTML file.
 
-    data -- a sequence of data from an LMC log (e.g. from read_jsonlines)
+    data -- a sequence of data from an LMC log
 
     renderer -- an instance of lmchallenge.pretty.Renderer
 
@@ -401,6 +401,17 @@ class OutputChoice(common.ParamChoice):
         print(render_html(data, renderer, float_format=float_format))
 
 
+def ansi(data, entropy_interval=10.0):
+    '''Convenience API for programatically generating ANSI-formatted pretty
+    output from logs.
+    '''
+    data = list(data)
+    return render_ansi(
+        data,
+        ChallengeChoice.auto(
+            data, entropy_interval=entropy_interval))
+
+
 @click.command()
 @click.argument('log', nargs=-1, type=click.Path(dir_okay=False))
 @click.option('-v', '--verbose', default=0, count=True,
@@ -425,7 +436,7 @@ def cli(log, verbose, challenge, output, entropy_interval, float_format):
     common.verbosity(verbose)
 
     # list() because of multiple traverse (in the case of reranking)
-    data = list(common.read_jsonlines(common.single_log(log)))
+    data = list(common.load_jsonlines(common.single_log(log)))
 
     renderer = challenge(data, entropy_interval=entropy_interval)
 

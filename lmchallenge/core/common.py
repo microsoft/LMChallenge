@@ -89,22 +89,27 @@ def not_closing(f):
     yield f
 
 
-def auto_open(filename):
+def auto_open(filename, mode='rt'):
     '''Open a file, and return it (should be used in a ``with``).
 
-    filename -- string -- path to a file (or gzip), or "-" for stdin
+    filename -- string -- path to a file (or gzip), or "-" for stdin/stdout
 
     returns -- file object -- performing gzip decoding if appopriate
     '''
     if filename == '-':
-        return not_closing(sys.stdin)
+        if 'r' in mode:
+            return not_closing(sys.stdin)
+        elif '+' in mode:
+            raise ValueError('Cannot return stdout/stdin with mode "r+"')
+        else:
+            return not_closing(sys.stdout)
     elif filename.endswith('.gz') or filename.endswith('.gzip'):
-        return gzip.open(filename, 'rt')
+        return gzip.open(filename, mode)
     else:
-        return open(filename, 'r')
+        return open(filename, mode)
 
 
-def read_jsonlines(filename):
+def load_jsonlines(filename):
     '''Generate json objects from a JSONlines file.
 
     Note that this relies on the iterator being exhausted, or going out of
@@ -118,15 +123,16 @@ def read_jsonlines(filename):
             yield json.loads(line.rstrip('\r\n'))
 
 
-def dump_jsonlines(data, out=sys.stdout):
+def dump_jsonlines(data, filename='-'):
     '''Dump data to stdout in jsonlines format.
 
     data -- iterable of dict -- data to dump
 
     out -- stream/file -- destination to write
     '''
-    for d in data:
-        out.write(json.dumps(d, sort_keys=True) + "\n")
+    with auto_open(filename, 'wt') as f:
+        for d in data:
+            f.write(json.dumps(d, sort_keys=True) + '\n')
 
 
 def zip_special(a, b):
@@ -221,6 +227,25 @@ def is_selected(datum):
     it should be selected.
     '''
     return datum.get('select', True)
+
+
+def autodetect_input(data):
+    '''Convert plain text input data to the dictionary-based format.
+
+    data -- either iterable of dictionaries or strings
+
+    returns -- iterable dict -- if `data` is plain strings, each dictionary is
+               {"text": line}, otherwise returns `data` unchanged
+    '''
+    first, data = peek(data)
+    if isinstance(first, str):
+        # auto-detection if passed an iterable of plain strings
+        return (dict(text=line) for line in data)
+    elif isinstance(first, dict):
+        return data
+    else:
+        raise ValueError(
+            'unexpected data item {} (expected str or dict)'.format(first))
 
 
 def zip_combine(common_keys, dict_iterables):

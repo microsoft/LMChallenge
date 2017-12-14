@@ -395,21 +395,6 @@ class Selection(Accumulator):
                        dict(value=child_state)))
 
 
-def stats(data):
-    '''Run the standard set of accumulators over 'data'.
-
-    data -- iterable -- a results log
-
-    returns -- an accumulated (machine-readable) set of stats
-               (can pass this to "humanize" to get a more agreeable
-               format)
-    '''
-    accumulator = Selection.create(child=Stats.create())
-    for datum in data:
-        accumulator.update(datum)
-    return accumulator.state
-
-
 def humanize(stats):
     '''To be used with the output of the Selection & Stats accumulators.
     '''
@@ -417,8 +402,6 @@ def humanize(stats):
     r = dict()
 
     # General info
-    if 'log' in stats:
-        r['log'] = stats.pop('log')
     r['fingerprint'] = Hash.format(stats.pop('fingerprint'))
     r['users'] = stats.pop('users')
     tokens = stats.pop('tokens')
@@ -477,6 +460,24 @@ def humanize(stats):
     return r
 
 
+def stats(data, human=True):
+    '''Run the standard set of accumulators over 'data'.
+
+    data -- log -- iterable results log
+
+    human -- show human-friendly derivative stats (instead of
+             machine-friendly sums)
+
+    returns -- an accumulated (machine-readable) set of stats
+               (can pass this to "humanize" to get a more agreeable
+               format)
+    '''
+    accumulator = Selection.create(child=Stats.create())
+    for datum in data:
+        accumulator.update(datum)
+    return humanize(accumulator.state) if human else accumulator.state
+
+
 class Output(common.ParamChoice):
     '''How to print the stats output.
     '''
@@ -532,10 +533,9 @@ def cli(log, verbose, lines, output, human, **args):
     common.verbosity(verbose)
     log = log or ['-']
     results = [dict(log=file,
-                    **stats(it.islice(common.read_jsonlines(file), lines)))
+                    **stats(it.islice(common.load_jsonlines(file), lines),
+                            human=human))
                for file in log]
-    if human:
-        results = [humanize(result) for result in results]
     sys.stdout.write(output(results))
 
 

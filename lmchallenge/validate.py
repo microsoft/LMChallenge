@@ -56,7 +56,7 @@ def cli(log, verbose):
     log = log or ['-']
 
     for single_log in log:
-        validate(common.read_jsonlines(single_log))
+        validate(common.load_jsonlines(single_log))
 
 
 __doc__ += common.shell_docstring(cli, 'lmc validate')

@@ -122,6 +122,30 @@ class Keep(common.ParamChoice):
         return filter(common.is_selected, log)
 
 
+def grep(pattern, data, keep='all', and_patterns=[]):
+    '''Search for `pattern` in the log `data`, returning a tagged log
+    which selects part of the original data.
+
+    pattern -- see `lmchallenge.grep.cli` for the language (essentially a
+               regex)
+
+    data -- input log - if a selection has already been applied, sub-selects
+            the log satisfying both selections
+
+    keep -- string -- either 'all', 'message', or 'token', what elements of
+            the log to return (e.g. 'all' returns the whole log, with a
+            tagged selection, whereas 'token' only returns tokens that match
+            the selection)
+
+    and_patterns -- list -- additional patterns to apply, all of which must
+                    match
+
+    returns -- log -- iterable
+    '''
+    predicate = parse_patterns_all(*([pattern] + and_patterns))
+    return getattr(Keep, keep)(select(data, predicate))
+
+
 # Script
 
 @click.command()
@@ -132,9 +156,9 @@ class Keep(common.ParamChoice):
 @click.option('-k', '--keep', type=Keep(), default='all',
               help='After applying the pattern to select tokens, what should'
               ' be kept in the log.')
-@click.option('-a', '--and', '--additional-pattern', multiple=True,
+@click.option('-a', '--and', '--and-pattern', multiple=True,
               help='Specify additional patterns that must all match.')
-def cli(pattern, log, verbose, keep, additional_pattern):
+def cli(pattern, log, verbose, keep, and_pattern):
     '''Search through logs for specific token instances.
 
     Pattern grammar:
@@ -190,14 +214,9 @@ def cli(pattern, log, verbose, keep, additional_pattern):
     '''
     common.verbosity(verbose)
 
-    data = common.read_jsonlines(common.single_log(log))
-
-    predicate = parse_patterns_all(*([pattern] + list(additional_pattern)))
-    select_data = select(data, predicate)
-
-    keep_data = keep(select_data)
-
-    common.dump_jsonlines(keep_data)
+    data = common.load_jsonlines(common.single_log(log))
+    predicate = parse_patterns_all(*([pattern] + list(and_pattern)))
+    common.dump_jsonlines(keep(select(data, predicate)))
 
 
 __doc__ += common.shell_docstring(cli, 'lmc grep')

@@ -169,6 +169,128 @@ def run_tokens(model, data, train, tokenizer, evaluate):
                 model.train(message['text'])
 
 
+def wc(model, data, train=False, next_word_only=False):
+    '''Run the Word Completion task over `model` and `data` to generate a
+    result log.
+
+    model -- `lmchallenge.core.model.Model` to evaluate
+
+    data -- iterable str or iterable dict -- text data
+
+    train -- should the model be trained after each line?
+
+    next_word_only -- speed up evaluation by only evaluating
+                      next-word-prediction, not completion
+
+    returns -- log -- iterable dict
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_completions,
+            next_word_only=next_word_only
+        ))
+
+
+def we(model, data, train=False):
+    '''Run the Word Entropy task over `model` and `data` to generate a
+    result log.
+
+    Word Entropy scans through the text word-by-word and asks
+    the model to score each word based only upon previous context. The
+    model is responsible for returning a normalized log probability as the
+    score for any context and target queried. Two models may only be compared
+    if they share the same vocabulary.
+
+    model -- `lmchallenge.core.model.Model` to evaluate
+
+    data -- iterable str or iterable dict -- text data
+
+    train -- should the model be trained after each line?
+
+    returns -- log -- iterable dict
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=evaluate_entropy)
+
+
+def ce(model, data, train=False):
+    '''Run the Character Entropy task over `model` and `data` to generate a
+    result log.
+
+    Character Entropy scans through the text character-by-character and asks
+    the model to score each character based only upon previous context. The
+    model is responsible for returning a normalized log probability as the
+    score for any context and target queried. Two models may only be compared
+    if they share the same vocabulary.
+
+    model -- `lmchallenge.core.model.Model` to evaluate
+
+    data -- iterable str or iterable dict -- text data
+
+    train -- should the model be trained after each line?
+
+    returns -- log -- iterable dict
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.CHARACTER_TOKENIZER,
+        evaluate=evaluate_entropy)
+
+
+def wr(model, data, vocab, train=False, seed=42,
+       num_candidates=100, error_config=errors.DEFAULT_CONFIG):
+    '''Run the Word Reranking task over `model` and `data` to generate a
+    result log.
+
+    Word Reranking corrupts the original text word-by-word using a simple
+    character substitution error model, then looks up nearby candidate words
+    in a (large) vocabulary of words. Each candidate is paired with the
+    probability under the error model of generating the corruption (a "perfect"
+    correction model score), and the task for model is to generate language
+    model scores for each candidate that can be combined linearly with the
+    error score to rank the candidates and recover the original text.
+
+    model -- `lmchallenge.core.model.Model` to evaluate
+
+    data -- iterable str or iterable dict -- text data
+
+    vocab -- iterable str -- vocabulary of words to corrupt the data to
+
+    train -- should the model be trained after each line?
+
+    seed -- random seed to use to generate corrupted candidates
+
+    num_candidates -- number of corrupted candidates to consider
+
+    error_config -- see `lmchallenge.core.errors` - defines the generation
+                    and scoring of error candidates
+
+    returns -- log -- iterable dict
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_reranking,
+            error_config=error_config,
+            search=errors.Search(words=set(vocab)),
+            num_candidates=num_candidates,
+            rand=random.Random(seed),
+        ))
+
+
 # Command line helpers
 
 class PredictorSpec(click.ParamType):

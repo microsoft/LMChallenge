@@ -54,6 +54,19 @@ def test_peek():
     assert list(items) == []
 
 
+def test_autodetect_input():
+    assert [dict(text="first line"), dict(text="second line")], \
+        list(common.autodetect_input(["first line", "second line"]))
+
+    # already dict => unchanged
+    data_with_user = [dict(user="a", text="first line"),
+                      dict(user="a", text="second line")]
+    assert data_with_user, list(common.autodetect_input(data_with_user))
+
+    with pytest.raises(ValueError):
+        common.autodetect_input([1, 2])
+
+
 def test_zip_special():
     for a, b, expected in [
             # some standard cases

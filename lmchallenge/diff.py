@@ -201,12 +201,10 @@ def cli(baseline, log, verbose, challenge, entropy_interval):
     '''
     common.verbosity(verbose)
 
-    baseline_data = common.read_jsonlines(baseline)
-    log_data = common.read_jsonlines(log)
-
-    for line in challenge(baseline_data,
-                          log_data,
-                          entropy_interval=entropy_interval):
+    for line in challenge(
+            common.load_jsonlines(baseline),
+            common.load_jsonlines(log),
+            entropy_interval=entropy_interval):
         print(line)
 
 
