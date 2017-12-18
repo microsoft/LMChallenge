@@ -7,5 +7,4 @@ before_install:
   - ./scripts/run build
 
 script:
-  - ./scripts/run --image prod test
   - ./scripts/run check
