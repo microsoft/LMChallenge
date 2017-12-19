@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-"""Utilities for corrupting and correcting text, for use with lmchallenge.ic.
+"""Utilities for corrupting and correcting text, for use with `lmchallenge.wr`.
 
 Currently the implemented corruption is very simple - corrupt each character
 with a low probability of it being replaced by another ASCII letter (or in-word

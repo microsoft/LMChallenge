@@ -307,14 +307,14 @@ def prune_cli(count):
             sys.stdout.write(line)
 
 
-def model_words_cli(ngrams, weights, n_predictions):
+def words_cli(ngrams, weights, n_predictions):
     '''Start a word model prediction loop.
     '''
     with open(ngrams) as f:
         WordModel(map(parse_ngram, f), weights, n_predictions).run_loop()
 
 
-def model_chars_cli(ngrams, weights):
+def chars_cli(ngrams, weights):
     '''Start a character model prediction loop.
     '''
     with open(ngrams) as f:
@@ -346,7 +346,7 @@ if __name__ == '__main__':
     s.add_argument('count', type=int, help='minimum count to allow')
     s.set_defaults(execute=prune_cli)
 
-    s = subparsers.add_parser('model-words',
+    s = subparsers.add_parser('words',
                               help='start a character model predictor')
     s.add_argument('ngrams', help='file path to ngrams dataset')
     s.add_argument('-n', '--n-predictions', default=100,
@@ -355,16 +355,16 @@ if __name__ == '__main__':
                    default=[1, 2, 2],
                    help='weights to apply to each order of prediction'
                    ' (starting with unigram)')
-    s.set_defaults(execute=model_words_cli)
+    s.set_defaults(execute=words_cli)
 
-    s = subparsers.add_parser('model-chars',
+    s = subparsers.add_parser('chars',
                               help='start a character model predictor')
     s.add_argument('ngrams', help='file path to ngrams dataset')
     s.add_argument('-w', '--weights', nargs='+', type=float,
                    default=[1, 1, 10, 100, 1000],
                    help='weights to apply to each order of prediction'
                    ' (starting with unigram)')
-    s.set_defaults(execute=model_chars_cli)
+    s.set_defaults(execute=chars_cli)
 
     args = vars(parser.parse_args())
     args.pop('execute')(**args)
