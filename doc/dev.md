@@ -34,6 +34,6 @@ For quicker tests, while developing, try `./scripts/run test`.
  1. (optionally) update requirements `./scripts/run -i base build --no-cache && ./scripts/run -i base refreeze`
  2. run the pre-publish checks `./scripts/run check`
  3. check that you're happy with `version.txt`
- 4. `python3 setup.py sdist upload -r pypi` (you must first set up pypi & GPG credentials)
+ 4. `python3 setup.py sdist upload -r pypi` (you must first set up pypi in `~/.pypirc` & provide GPG credentials to `gpg --import`)
  5. `git push origin HEAD:refs/tags/$(cat version.txt)`
  6. update, commit & push `version.txt`
