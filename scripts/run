@@ -8,7 +8,6 @@ import argparse
 import subprocess
 import string
 import os
-import time
 import sys
 import itertools as it
 
@@ -21,23 +20,44 @@ def sh(cmd, **args):
 
 
 def image_tag(image):
-    return dict(prod='lmchallenge',
-                dev='lmchallenge-dev').get(image, image)
+    return dict(
+        prod='lmchallenge',
+        base='lmchallenge-base',
+        dev='lmchallenge-dev',
+        notebook='lmchallenge-notebook'
+    ).get(image, image)
 
 
 def build(args):
     '''Build or pull the Docker image, which may be:
     "prod" -- build the production image
+    "base" -- build the base image
     "dev"  -- build the development image
     "other/name" -- pull a remote image
     '''
-    if args.image in ['prod', 'dev']:
-        # dev depends on prod, so we must build this first
-        sh('docker build --rm -t lmchallenge .')
-        if args.image == 'dev':
-            sh('docker build --rm -t lmchallenge-dev scripts/')
+    if args.image in ['prod', 'base', 'dev', 'notebook']:
+        sh('docker build --rm ${FLAGS} -t ${TAG} -f ${DOCKERFILE} .',
+           TAG=image_tag(args.image),
+           FLAGS='--no-cache' if args.no_cache else '',
+           DOCKERFILE=(
+               'Dockerfile'
+               if args.image == 'prod' else
+               ('scripts/Dockerfile.' + args.image)))
     else:
         sh('docker pull %s' % args.image)
+
+
+def refreeze(args):
+    '''Refreeze requirements.txt.
+    '''
+    if args.image != 'base':
+        sys.stderr.write(
+            'WARNING: freezing dependencies should generally be done'
+            ' from the "base" image, not "{}"\n'.format(args.image))
+    sh('docker run --rm -i -v ${WORK}:/work -w /work'
+       ' ${TAG} pip freeze > requirements.txt',
+       WORK=os.getcwd(),
+       TAG=image_tag(args.image))
 
 
 def run(args):
@@ -53,9 +73,11 @@ def run(args):
 def test(args):
     'Run unit & functional tests.'
     sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
-       ' python3 setup.py test',
+       ' pytest lmchallenge --doctest-modules ${SLOW} ${PYTEST_ARGS}',
        WORK=os.getcwd(),
-       TAG=image_tag(args.image))
+       TAG=image_tag(args.image),
+       SLOW='--run-slow' if args.slow else '',
+       PYTEST_ARGS=' '.join(args.pytest_args))
 
 
 def flake(args):
@@ -72,23 +94,29 @@ COPYRIGHT_NOTICE = [
 ]
 
 
+def check_copyright(path):
+    # Strict verbatim test - the file must start with these lines
+    with open(path) as f:
+        lines = list(l.rstrip('\n') for l in it.islice(f, 2))
+    if lines != COPYRIGHT_NOTICE:
+        sys.stderr.write(
+            ('Error! Bad copyright notice in {}:'
+             '   {}\n').format(
+                 path,
+                 '\\n'.join(lines)
+            ))
+    return lines == COPYRIGHT_NOTICE
+
+
 def copyright(args):
     'Check for copyright headers.'
-    errors = 0
-    for root, _, files in os.walk('lmchallenge'):
-        for name in (f for f in files if os.path.splitext(f)[-1] == '.py'):
-            path = os.path.join(root, name)
-            # Strict verbatim test - the file must start with these lines
-            with open(path) as f:
-                lines = list(l.rstrip('\n') for l in it.islice(f, 2))
-            if lines != COPYRIGHT_NOTICE:
-                sys.stderr.write(
-                    ('Error! Bad copyright notice in {}:'
-                     '   {}\n').format(
-                         path,
-                         '\\n'.join(lines)
-                    ))
-                errors += 1
+    errors = sum(
+        1
+        for base in ['lmchallenge', 'sample']
+        for root, _, files in os.walk(base)
+        for name in files
+        if os.path.splitext(name)[-1] == '.py'
+        if not check_copyright(os.path.join(root, name)))
     if errors:
         exit(errors)
 
@@ -98,61 +126,82 @@ def check(args):
     test(args)
     flake(args)
     copyright(args)
+    sys.stderr.write('*** All Checks passed ***\n')
 
 
 def doc(args):
-    'Generatic documentation.'
+    'Generate documentation.'
+    OUT = 'site/'
     sh('docker run --rm -i -v ${WORK}:/work -w /work ${TAG}'
-       ' make -C doc clean html',
+       ' env PYTHONPATH=.'
+       ' pdoc --overwrite --html --html-dir ${OUT} lmchallenge',
        WORK=os.getcwd(),
-       TAG=image_tag(args.image))
+       TAG=image_tag(args.image),
+       OUT=OUT)
+    sys.stderr.write('Documentation generated: {}\n'.format(OUT))
 
 
 def notebook(args):
     'Start a notebook server with LMC loaded.'
     if args.restart:
-        try:
-            sh('docker rm -f ${NAME}', NAME=args.name)
-        except subprocess.CalledProcessError:
-            # This command is allowed to fail (e.g. not running already)
-            pass
+        # Ignore failures e.g. not running already
+        sh('docker rm -f ${NAME} || true', NAME=args.name)
+
+    # IPython.lib.passwd(passphrase='lmc')
+    password = 'sha1:d9c0350bce66:7ab513830b9a6688ed423c65f486c8d08b13718c'
 
     sh('docker run -d -v ${WORK}:/work -w /work'
        ' --name ${NAME} -p ${PORT}:${PORT} ${TAG}'
-       ' sh -c "jupyter notebook --port ${PORT} --ip \'*\'"',
+       ' sh -c "jupyter notebook --allow-root'
+       ' --port ${PORT} --ip \'*\''
+       ' --NotebookApp.password=\'${PASSWORD}\'"',
        WORK=os.getcwd(),
        NAME=args.name,
+       PASSWORD=password,
        PORT=args.port,
        TAG=image_tag(args.image))
 
-    time.sleep(1)
-
-    sh('docker logs ${NAME}', NAME=args.name)
+    sys.stderr.write('  Server: http://localhost:{}\n'.format(args.port))
+    sys.stderr.write('Password: lmc\n')
 
 
 parser = argparse.ArgumentParser(
     description='Builder, runner, tester for lmchallenge development',
 )
-parser.add_argument('-i', '--image',
-                    help='Which image to use: "prod" | "dev" | "other/name"',
-                    type=str, default='dev')
-
+parser.add_argument(
+    '-i', '--image',
+    help='Which image to use:'
+    ' "base" | "prod" | "dev" | "notebook" | "other/name"',
+    type=str,
+    default='dev'
+)
+parser.set_defaults(action=lambda args: parser.print_help())
 subparsers = parser.add_subparsers()
 
 sparser = subparsers.add_parser('build', help=build.__doc__)
+sparser.add_argument('--no-cache', action='store_true',
+                     help='rebuild the image from scratch')
 sparser.set_defaults(action=build)
+
+sparser = subparsers.add_parser('refreeze', help=refreeze.__doc__)
+sparser.set_defaults(action=refreeze)
 
 sparser = subparsers.add_parser('run', help=run.__doc__)
 sparser.add_argument('command', nargs='*')
 sparser.set_defaults(action=run)
 
 sparser = subparsers.add_parser('test', help=test.__doc__)
+sparser.add_argument('--slow', action='store_true', help='run slow tests')
+sparser.add_argument('pytest_args', nargs='*', default=[])
 sparser.set_defaults(action=test)
 
 sparser = subparsers.add_parser('flake', help=flake.__doc__)
 sparser.set_defaults(action=flake)
 
 sparser = subparsers.add_parser('check', help=check.__doc__)
+sparser.add_argument('--no-slow', dest='slow', action='store_false',
+                     help='don\'t run slow tests')
+sparser.add_argument('pytest_args', nargs='*', default=[])
 sparser.set_defaults(action=check)
 
 sparser = subparsers.add_parser('doc', help=doc.__doc__)

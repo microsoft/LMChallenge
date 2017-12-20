@@ -1,0 +1,52 @@
+.line {
+    margin-bottom: 1em;
+}
+
+.word {
+    display: inline-block;
+    vertical-align: top;
+    color: #202020;
+    white-space: pre;
+}
+.word.spaced {
+    margin-left: .5em;
+}
+
+.filtered {
+    color: #0000a0;
+}
+.entropy-miss {
+    color: #800080;
+}
+.entropy-hit {
+    font-weight: bold;
+}
+.wc-predicted {
+    color: #00a030;
+}
+.wc-unpredicted {
+    color: #ff0000;
+}
+.wc-unpredicted i {
+    color: #ffa000;
+    font-style: normal;
+}
+.selected {
+    background-color: #ddf;
+    font-weight: bold;
+}
+.target-row {
+    background-color: #a0ffc0;
+}
+.verbatim-row {
+    background-color: #ffe0c0;
+}
+.tip {
+    text-align: left;
+}
+.results-table {
+    font-size: small;
+}
+.results-table-rank {
+    font-family: mono;
+}

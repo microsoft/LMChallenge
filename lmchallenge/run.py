@@ -1,275 +1,325 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Main entry point into the evaluation utilities.
+'''Run evaluation utilities over a model, to generate LM Challenge logs.
 '''
 
 import click
-import itertools
 import json
 import sys
+import logging
 import random
-from .core import common, runner, errors
+import itertools as it
+import functools as ft
+from .core import common, errors, model
 
 
-# Programs
+# Helpers
 
-class Wp:
-    def __init__(self, targets=True, predictions=False):
-        self.targets = targets
-        self.predictions = targets and predictions
+def find_tokens(text, tokenizer):
+    '''Return a generator of `{"token", "character", "target"}` dictionaries by
+    tokenizing some text.
 
-    @staticmethod
-    def contexts_and_targets(line):
-        '''Return a generator of (context, target) pairs by parsing a line.
-        '''
-        for m in common.TOKENIZER.finditer(line):
-            start, end = m.span()
-            target = m.group()
-            yield line[:start], target
+    `text` -- `string` -- the text to tokenize
 
-    def __call__(self, model, line):
-        '''Return a stats object for a single line of wp evaluation.
-        '''
-        result = []
-        for context, target in Wp.contexts_and_targets(line):
-            word_result = {}
-            if self.targets:
-                word_result['target'] = target
-            else:
-                word_result['targetChars'] = len(target)
-            predictions_with_scores = model.predict(context, None)
-            if self.predictions:
-                word_result['predictions'] = predictions_with_scores
-            target_score = None
-            for word, score in predictions_with_scores:
-                if word == target:
-                    target_score = score
-                    break
-            if target_score is not None:
-                word_result['rank'] = sum(
-                    target_score <= score
-                    for word, score in predictions_with_scores
-                )
-                word_result['score'] = target_score
+    `tokenizer` -- `regex.Regex` -- the tokenizer to use on the text
+                   (supporting `finditer`)
 
-            result.append(word_result)
+    `return` -- `generator(dict)` -- a generator of tokens, which have keys:
 
-        return {'wordPredictions': result}
-
-
-class Tc:
-    DEFAULT_SELECT_FROM = 3
-
-    def __init__(self, targets=True, select_from=DEFAULT_SELECT_FROM):
-        self.targets = targets
-        self.select_from = select_from
-
-    def __call__(self, model, line):
-        '''Return a stats object for a single line of tc evaluation.
-        '''
-        result = []
-        typing = ''
-
-        def flush_typing():
-            nonlocal typing
-            if len(typing) != 0:
-                result.append({'target': typing}
-                              if self.targets else
-                              {'targetChars': len(typing)})
-                typing = ''
-        i = 0
-        while i < len(line):
-            context = line[:i]
-            tail = line[i:]
-
-            predictions = model.predict(context, None)[:self.select_from]
-            matches = [(prediction, rank, score)
-                       for rank, (prediction, score) in enumerate(predictions)
-                       if len(prediction) != 0 and tail.startswith(prediction)]
-
-            if len(matches) == 0:
-                # Typing a character
-                typing += line[i]
-                i += 1
-            else:
-                # Accepting a prediction
-                flush_typing()
-                match, match_rank, match_score = max(matches,
-                                                     key=lambda m: len(m[0]))
-                entry = {'rank': match_rank,
-                         'score': match_score}
-                if self.targets:
-                    entry['target'] = match
-                else:
-                    entry['targetChars'] = len(match)
-                result.append(entry)
-                i += len(match)
-
-        flush_typing()
-        return {'textCompletions': result}
-
-
-class Ic:
-    DEFAULT_NUM_CANDIDATES = 100
-
-    def __init__(self, vocab, targets=True,
-                 num_candidates=DEFAULT_NUM_CANDIDATES,
-                 error_config=errors.DEFAULT_CONFIG):
-        self.targets = targets
-        self.num_candidates = num_candidates
-        self.error_config = error_config
-        self.search = errors.Search(words=vocab, n=num_candidates)
-
-    def corruption_candidates(self, target):
-        '''Corrupt the candidate, and return a pair ``(corruption, input_scores)``
-        with error model scores for each candidate.
-        '''
-
-        corrupted = errors.corrupt(self.error_config, target)
-
-        candidates = self.search(corrupted)
-
-        # clip off trailing candidates if needed to ensure corrupted & target
-        # can be added - this should keep the maximum size of candidates
-        # clamped at 'n' and ensuring that it contains 'target' and 'corrupted'
-        candidates = set(
-            candidates[:(self.num_candidates - (target not in candidates) -
-                         (corrupted not in candidates))]
-        ) | set([corrupted, target])
-
-        return corrupted, \
-            {c: errors.score(self.error_config, corrupted, c)
-             for c in candidates}
-
-    def __call__(self, model, line):
-        '''Return a stats object for a single line of ic evaluation.
-        '''
-        result = []
-        for context, target in Wp.contexts_and_targets(line):
-            corrupted, input_scores = self.corruption_candidates(target)
-            lm_scores = dict(model.predict(context, input_scores.keys()))
-
-            word_result = {}
-            word_result['score'] = [input_scores[target],
-                                    lm_scores.get(target, None)]
-            if self.targets:
-                word_result['target'] = target
-                word_result['verbatim'] = corrupted
-                word_result['candidates'] = [
-                    [candidate, input_score, lm_scores.get(candidate, None)]
-                    for candidate, input_score in input_scores.items()
-                ]
-            else:
-                word_result['targetChars'] = len(target)
-                word_result['verbatimMatch'] = (corrupted == target)
-                word_result['candidates'] = [
-                    [input_score, lm_scores.get(candidate, None)]
-                    for candidate, input_score in input_scores.items()
-                ]
-
-            result.append(word_result)
-
-        return {'inputCorrections': result}
-
-
-# Generic code to run the programs
-
-def run(model, task, data, train=False):
-    '''Run an evaluation of ``model`` over some lines of evaluation data.
-
-    ``model`` - an instance of ``runner.BaseModel`` to train & predict
-
-    ``task`` - callable ``task(model, text)`` to return a results object
-    for a single line
-
-    ``data`` - a sequence of dictionaries containing at least {"text": "..."}
-
-    ``returns`` - a sequence of dictionaries for each line of text
+      - `token` -- `int` -- index of the token in the message
+      - `character` -- `int` -- index of the first character of the token in
+                       the message
+      - `target` -- `string` -- the text content of the token itself
     '''
-    lines_by_user = itertools.groupby(
-        data, lambda line: line.get('userId')
+    for i, m in enumerate(tokenizer.finditer(text)):
+        yield dict(token=i, character=m.span()[0], target=m.group())
+
+
+def get_completions(model, context, target):
+    '''A generator of completions from a model, with successive "typed" prefixes.
+
+    `model` -- `lmchallenge.core.model.Model` -- model to evaluate
+
+    `context` -- `string` -- the text before the target
+
+    `target` -- `string` -- the token being typed
+
+    `return` -- `generator(list(string))` -- generates lists of string
+                predictions, at each point while typing out `target`
+    '''
+    for i in range(len(target)):
+        yield [w for w, s in model.predict(context + target[:i], None)]
+
+
+def get_logp(model, context, target):
+    '''Wrap the model.predict API to query the score of a single target.
+    '''
+    results = list(model.predict(context, [target]))
+    if 2 <= len(results):
+        logging.warning('multiple results returned for a single candidate')
+    try:
+        return next(s for w, s in results if w == target)
+    except StopIteration:
+        return None
+
+
+# Evaluation
+
+def evaluate_completions(model, context, target, next_word_only):
+    '''Evaluator for Word Completion.
+
+    `next_word_only` -- `bool` -- save time by only producing results for
+                        next-word-prediction (i.e. no completion)
+    '''
+    return dict(completions=list(it.islice(
+        get_completions(
+            model=model,
+            context=context,
+            target=target,
+        ),
+        1 if next_word_only else None
+    )))
+
+
+def evaluate_entropy(model, context, target):
+    '''Evaluator for Word/Character Entropy.
+    '''
+    return dict(logp=get_logp(model=model, context=context, target=target))
+
+
+def evaluate_reranking(model, context, target,
+                       error_config, search, num_candidates, rand):
+    '''Evaluator for Error Reranking.
+
+    `error_config` -- `dict` -- for `lmchallenge.core.errors`
+
+    `serach` -- `lmchallenge.core.errors.Search` -- find nearby words
+
+    `num_candidates` -- `int` -- number of candidates to search
+
+    `rand` -- `random.Random` -- use for corrupting the text
+    '''
+    corrupted = errors.corrupt(error_config, target, rand=rand)
+
+    candidates = search(corrupted, num_candidates)
+
+    # clip off trailing candidates if needed to ensure corrupted & target
+    # can be added - this should keep the maximum size of candidates
+    # clamped at 'n' and ensuring that it contains 'target' and 'corrupted'
+    candidates = set(
+        candidates[:(num_candidates -
+                     (target not in candidates) -
+                     (corrupted not in candidates))]
+    ) | set([corrupted, target])
+
+    lm_scores = dict(model.predict(context, candidates))
+
+    results = [
+        (candidate,
+         errors.score(error_config, corrupted, candidate),
+         lm_scores.get(candidate, None))
+        for candidate in candidates
+    ]
+    return dict(
+        verbatim=corrupted,
+        results=list(sorted(results, key=lambda x: -x[1]))
     )
-    for user_id, user_lines in lines_by_user:
+
+
+def run_tokens(model, data, train, tokenizer, evaluate):
+    '''Run a per-token evaluation.
+
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
+
+    `data` -- `iterable(dict)` -- an iterable of "message" dictionaries,
+              containing:
+
+     - `text` -- `string` -- the contents of the message
+     - `user` -- `string` (optional) -- a user ID
+
+    `train` -- `bool` -- should we train after every message?
+
+    `tokenizer` -- `regex.Regex` -- tokenizer for finding tokens in messages
+
+    `evaluate` -- `callable(model, context, target) -> dict` -- runs evaluation
+                  for a single target
+
+    `return` -- `generator(dict)` -- generator of results, containing:
+
+     - `user` -- `string` -- from the message
+     - `message` -- `int` -- index of message
+     - `token` -- `int` -- index of token within the message
+     - `character` -- `int` -- index of character within the message
+     - `target` -- `string` -- token being typed
+    '''
+    data_by_user = it.groupby(data, lambda x: x.get('user'))
+    for user, messages in data_by_user:
         if train:
             model.clear()
-            training_chars = 0
-
-        lines_by_time = itertools.groupby(
-            user_lines, lambda line: line.get('timestamp', object())
-        )
-        for timestamp, same_timestamp_lines in lines_by_time:
-            training_buffer = []
-            for row in same_timestamp_lines:
-                result_row = row.copy()
-                text = result_row.pop('text')
-                result_row.update(task(model, text))
-
-                if train:
-                    training_buffer.append(text)
-                    result_row['trainingChars'] = training_chars
-
-                yield result_row
-
-            # When multiple lines of text have the same timestamp
-            # (e.g. if they came from the same UsageFragment and we
-            # don't know the original order they occurred in), we
-            # can't train on one line before predicting another, we
-            # have to wait until we've predicted for all lines first.
+        for message_n, message in enumerate(messages):
+            for token in find_tokens(text=message['text'],
+                                     tokenizer=tokenizer):
+                yield dict(
+                    user=user,
+                    message=message_n,
+                    **evaluate(
+                        model=model,
+                        context=message['text'][:token['character']],
+                        target=token['target']
+                    ),
+                    **token
+                )
             if train:
-                for line in training_buffer:
-                    model.train(line)
-                    training_chars += len(text)
+                model.train(message['text'])
 
 
-class InputFormat(common.ParamChoice):
-    '''Input handling - text or json,
+def wc(model, data, train=False, next_word_only=False):
+    '''Run the Word Completion task over `model` and `data` to generate a
+    result log.
+
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
+
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
+
+    `train` -- `bool` -- should the model be trained after each line?
+
+    `next_word_only` -- `bool` -- speed up evaluation by only evaluating
+                        next-word-prediction, not completion
+
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
-    name = 'input_format'
-    choices = ['text', 'json']
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_completions,
+            next_word_only=next_word_only
+        ))
 
-    @staticmethod
-    def text(line):
-        return {'text': line.rstrip('\r\n')}
 
-    @staticmethod
-    def json(line):
-        return json.loads(line.rstrip('\r\n'))
+def we(model, data, train=False):
+    '''Run the Word Entropy task over `model` and `data` to generate a
+    result log.
 
+    Word Entropy scans through the text word-by-word and asks
+    the model to score each word based only upon previous context. The
+    model is responsible for returning a normalized log probability as the
+    score for any context and target queried. Two models may only be compared
+    if they share the same vocabulary.
 
-def run_stream(model, task,
-               input=sys.stdin, format=InputFormat.text,
-               output=sys.stdout, train=False):
-    '''As per ``run``, except wraps model in a ``with``, parses
-    input & formats output to file streams.
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
+
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
+
+    `train` -- `bool` -- should the model be trained after each line?
+
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
-    with model as enter_model:
-        for line in run(model=enter_model,
-                        data=map(format, input),
-                        task=task,
-                        train=train):
-            output.write('%s\n' % json.dumps(line, sort_keys=True))
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=evaluate_entropy)
 
+
+def ce(model, data, train=False):
+    '''Run the Character Entropy task over `model` and `data` to generate a
+    result log.
+
+    Character Entropy scans through the text character-by-character and asks
+    the model to score each character based only upon previous context. The
+    model is responsible for returning a normalized log probability as the
+    score for any context and target queried. Two models may only be compared
+    if they share the same vocabulary.
+
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
+
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
+
+    `train` -- `bool` -- should the model be trained after each line?
+
+    `return` -- `iterable(dict)` -- LM Challenge log
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.CHARACTER_TOKENIZER,
+        evaluate=evaluate_entropy)
+
+
+def wr(model, data, vocab, train=False, seed=42,
+       num_candidates=100, error_config=errors.DEFAULT_CONFIG):
+    '''Run the Word Reranking task over `model` and `data` to generate a
+    result log.
+
+    Word Reranking corrupts the original text word-by-word using a simple
+    character substitution error model, then looks up nearby candidate words
+    in a (large) vocabulary of words. Each candidate is paired with the
+    probability under the error model of generating the corruption (a "perfect"
+    correction model score), and the task for model is to generate language
+    model scores for each candidate that can be combined linearly with the
+    error score to rank the candidates and recover the original text.
+
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
+
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
+
+    `vocab` -- `iterable(string)` -- vocabulary of words to corrupt the data to
+
+    `train` -- `bool` -- should the model be trained after each line?
+
+    `seed` -- `int` or `None` -- random seed to use to generate corrupted
+              candidates
+
+    `num_candidates` -- `int` -- number of corrupted candidates to consider
+
+    `error_config` -- `dict` -- see `lmchallenge.core.errors` - defines the
+                      generation and scoring of error candidates
+
+    `return` -- `iterable(dict)` -- LM Challenge log
+    '''
+    return run_tokens(
+        model,
+        common.autodetect_input(data),
+        train=train,
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_reranking,
+            error_config=error_config,
+            search=errors.Search(words=set(vocab)),
+            num_candidates=num_candidates,
+            rand=random.Random(seed),
+        ))
+
+
+# Command line helpers
 
 class PredictorSpec(click.ParamType):
     '''Loads a predictor, either from a Python module or a shell command.
     '''
-
     class PythonModel:
         def __init__(self, ctor):
             self.ctor = ctor
 
         def __call__(self, options):
-            return self.ctor(options.copy())
+            return self.ctor(**options)
 
     class ShellModel:
         def __init__(self, cmd):
             self.cmd = cmd
 
         def __call__(self, options):
-            return runner.ShellModel(self.cmd, options)
+            return model.ShellModel(self.cmd, options)
 
     name = 'predictor_spec'
+
+    def get_metavar(self, param):
+        return 'SPEC'
 
     def convert(self, value, param, ctx):
         if common.is_qualified_name(value):
@@ -277,28 +327,62 @@ class PredictorSpec(click.ParamType):
         else:
             return self.ShellModel(value)
 
-    def get_metavar(self, param):
-        return 'SPEC'
 
+class InputFormat(common.ParamChoice):
+    '''Input handling - text or json,
+    '''
+    name = 'input_format'
+    choices = ['auto', 'text', 'json']
+
+    @staticmethod
+    def _is_json(line):
+        try:
+            # if you can parse it as JSON
+            d = json.loads(line)
+            # and is an object containing a key called "text"
+            # then assume it is our "json" format
+            return isinstance(d, dict) and 'text' in d
+        except json.JSONDecodeError:
+            return False
+
+    @classmethod
+    def auto(cls, lines):
+        first_line, lines = common.peek(lines)
+        if first_line is None:
+            pass
+        elif cls._is_json(first_line):
+            yield from cls.json(lines)
+        else:
+            yield from cls.text(lines)
+
+    @staticmethod
+    def text(lines):
+        for line in lines:
+            yield dict(text=line.rstrip('\r\n'))
+
+    @staticmethod
+    def json(lines):
+        for line in lines:
+            yield json.loads(line)
+
+
+# Command lines
 
 @click.group()
 @click.argument('predictor', type=PredictorSpec())
-@click.option('-w/-W', '--targets/--no-targets', default=True,
-              help='Omit the target words, leaving only the score and rank'
-              ' for each target word. This is useful in case you don\'t want'
-              ' to disclose the source data, or to reduce size of the output.'
-              ' Not compatible with --predictions (in `wp`).')
+@click.option('-v', '--verbose', default=0, count=True,
+              help='How much human-readable detail to print to STDERR.')
 @click.option('-t', '--train/--no-train', default=False,
               help='Train the model on lines of text after predictions have'
               ' been given for them (and any others with the same timestamp),'
               ' resetting for each userId. This is mainly useful for dynamic'
               ' modelling experiments with the json corpus format.')
-@click.option('-f', '--format', default='text', type=InputFormat(),
+@click.option('-f', '--format', default='auto', type=InputFormat(),
               help='Format for test data. text is just lines of plain text;'
               ' json is our json-lines corpus format with rows like'
-              ' {"text": "A line of text", "timestamp": 1234567,'
-              ' "userId": "user1234"}, ordered by userId then timestamp (where'
-              ' present; timestamp is optional).')
+              ' {"text": "A line of text", "user": "user1234"},'
+              ' grouped (e.g. ordered) by userId. Default "auto" is to try to'
+              ' auto-detect the format, based on the first line of the log.')
 @click.option('-o', '--options', type=common.JsonParam(), default='{}',
               help='Additional JSON-formatted options to be parsed and'
               ' passed to a Python module predictor, or converted to command'
@@ -308,9 +392,9 @@ class PredictorSpec(click.ParamType):
               ' and an optional list of arguments with the key "positional".'
               ' For example: \'{"abc": 123, "-n" 10,'
               ' "positional": ["hello", "world"]}\' will be passed as'
-              ' `<cmd> hello world -n 10 --a 123`.')
+              ' `<cmd> hello world -n 10 --abc 123`.')
 @click.pass_context
-def cli(ctx, predictor, targets, train, format, options):
+def cli(ctx, verbose, predictor, train, format, options):
     '''Run a challenge for a predictor over some test text.
     Pipe in text to record an evaluation run of a pipeable predictor, on a
     language modelling task.
@@ -323,66 +407,96 @@ def cli(ctx, predictor, targets, train, format, options):
     or the qualified name of a Python class or function
     e.g. "mymodule.MyClass".
     '''
+    common.verbosity(verbose)
+
+    def _runner(tokenizer, evaluate):
+        with predictor(options) as model:
+            common.dump_jsonlines(run_tokens(
+                model=model,
+                data=format(sys.stdin),
+                train=train,
+                tokenizer=tokenizer,
+                evaluate=evaluate,
+            ))
     ctx.obj = ctx.obj or {}
-    ctx.obj['run'] = lambda task: run_stream(predictor(options), task,
-                                             format=format,
-                                             train=train)
-    ctx.obj['targets'] = targets
+    ctx.obj['run'] = _runner
 
 
-@cli.command('wp')
-@click.option('-p', '--predictions/--no-predictions', default=False,
-              help='Include the full list of predictions in the result.')
+@cli.command('wc')
+@click.option('-p', '--next-word-only/--no-next-word-only',
+              default=False,
+              help='Only compute next-word-predictions - don\'t produce'
+              ' results for prefix completions (for performance)')
 @click.pass_context
-def cli_wp(ctx, predictions):
-    '''Word Prediction Challenge.
+def cli_wc(ctx, next_word_only):
+    '''Word Completion Challenge (next-word prediction & completion).
     '''
-    ctx.obj['run'](Wp(targets=ctx.obj['targets'], predictions=predictions))
+    ctx.obj['run'](
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_completions,
+            next_word_only=next_word_only)
+    )
 
 
-@cli.command('tc')
-@click.option('-n', '--select-from', type=click.INT,
-              default=Tc.DEFAULT_SELECT_FROM,
-              help='Number of predictions to select text completions from.')
+@cli.command('we')
 @click.pass_context
-def cli_tc(ctx, select_from):
-    '''Text Completion Challenge.
+def cli_we(ctx):
+    '''Word Entropy Challenge.
     '''
-    ctx.obj['run'](Tc(targets=ctx.obj['targets'], select_from=select_from))
+    ctx.obj['run'](
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=evaluate_entropy,
+    )
 
 
-@cli.command('ic')
+@cli.command('wr')
 @click.argument('vocab', type=click.File('r'))
 @click.option('-r', '--seed', default=42,
               help='Random seed to fix (default: fixed), or 0 to get a'
               ' pseudorandom seed from the clock')
-@click.option('-n', '--num-candidates', default=Ic.DEFAULT_NUM_CANDIDATES,
-              help='Number of candidates to consider for each'
-              ' word \'typed\'.')
+@click.option('-n', '--num-candidates', default=100,
+              help='Number of candidates to consider for each word.')
 @click.option('--error-chars', default=errors.DEFAULT_CONFIG['error_chars'],
               help='Set of characters to sample from when adding'
               ' global character errors')
 @click.option('-p', '--p-anykey', default=errors.DEFAULT_CONFIG['p_anykey'],
               help='Probability of substituting an \'anykey\' error')
 @click.pass_context
-def cli_ic(ctx, vocab, seed, num_candidates, error_chars, p_anykey):
-    '''Input Correction Challenge.
-
-    VOCAB - File containing a list of all words to consider as correction
-    candidates (this should generally be a long list!)
+def cli_wr(ctx, vocab, seed, num_candidates, error_chars, p_anykey):
+    '''Word Reranking Challenge.
     '''
-    if seed != 0:
-        random.seed(seed)
-    vocab = set(line.rstrip('\r\n') for line in vocab)
+    rand = random.Random(seed)
+    words = set(line.rstrip('\r\n') for line in vocab)
     error_config = dict(error_chars=error_chars, p_anykey=p_anykey)
-    ctx.obj['run'](Ic(vocab=vocab, targets=ctx.obj['targets'],
-                      num_candidates=num_candidates,
-                      error_config=error_config))
+    search = errors.Search(words=words)
+    ctx.obj['run'](
+        tokenizer=common.WORD_TOKENIZER,
+        evaluate=ft.partial(
+            evaluate_reranking,
+            error_config=error_config,
+            search=search,
+            num_candidates=num_candidates,
+            rand=rand,
+        ),
+    )
+
+
+@cli.command('ce')
+@click.pass_context
+def cli_ce(ctx):
+    '''Character Entropy Challenge.
+    '''
+    ctx.obj['run'](
+        tokenizer=common.CHARACTER_TOKENIZER,
+        evaluate=evaluate_entropy,
+    )
 
 
 __doc__ += common.shell_docstring(cli, 'lmc run')
-__doc__ += common.shell_docstring(cli_wp, 'lmc run wp')
-__doc__ += common.shell_docstring(cli_tc, 'lmc run tc')
-__doc__ += common.shell_docstring(cli_ic, 'lmc run ic')
+__doc__ += common.shell_docstring(cli_wc, 'lmc run wc')
+__doc__ += common.shell_docstring(cli_we, 'lmc run we')
+__doc__ += common.shell_docstring(cli_wr, 'lmc run wr')
+__doc__ += common.shell_docstring(cli_ce, 'lmc run ce')
 if __name__ == '__main__':
     cli()

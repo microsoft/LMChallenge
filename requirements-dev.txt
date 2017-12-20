@@ -1,0 +1,6 @@
+-r requirements-base.txt
+flake8
+pdoc
+pytest
+pygments
+scipy

@@ -113,71 +113,66 @@ For example:
 
 ## Log formats
 
-Each LM Challenge game has a slightly different log format, although they are similar, both based upon UTF-8 encoded [jsonlines](http://jsonlines.org/).
+All LM Challenge games share a common log schema (defined formally in `log.schema`, which has common metadata and optional payload data for each challenge. Logs should be stored as UTF-8 encoded [jsonlines](http://jsonlines.org/), optionally gzipped.
 
-Each format has the same top-level form, containing one entry for a group of same-timestamp lines from a single user (if users and timestamps were identified in the input).
+The required keys for a log event, which typically represents a single word or character from the data, are as follows:
 
-     {"userId": ID, "timestamp": NUMBER, "trainingChars": NUMBER, ...}
+    {"user": STRING,
+     "character": NUMBER,
+     "message": NUMBER,
+     "token": NUMBER,
+     "target": STRING}
 
-Where all fields are optional (i.e. `userId` & `timestamp` in the absence of marked-up input, and `trainingChars` in the absence of dynamic learning).
+ - `user` should be a unique identifier for that user (or `null`, if there is no user information)
+ - `character` is the index of the start of the source data range, relative to the start of the message
+ - `message` is the message index within a single user
+ - `token` is the token index within a single message
+ - `target` is a string from the source data, the text being modelled
 
-_For data privacy and storage space reasons, there are various levels of detail for each format, which may be controlled using switches to the challenge game being run._
+LM Challenge logs should be sorted by `(user, message, token)` - i.e. all events for a single user should be contiguous, and message & token should be in ascending order for that user.
 
-### `wp` logs
+Note that LM Challenge logs contain the original source text, so should be subject to the same privacy constraints & data protection classification.
 
-Log lines from `wp` contain an additional key `wordPredictions`, which maps to one of the following structures (depending on privacy and verbosity settings):
+### `wc` logs
 
-    1. [{"score": NUMBER, "rank": NUMBER, "target": STRING}...]
-    2. [{"score": NUMBER, "rank": NUMBER, "targetChars": NUMBER}...]
-    3. [{"score": NUMBER, "rank": NUMBER, "target": STRING, "predictions": [ [STRING, NUMBER]...]}...]
+Log lines from `wc` contain an additional key `completions`, which records next-word-predictions and prefix completions for the target word.
 
-In every format, `rank` provides the fundamental analysis mechanism (if present, the correct word was predicted, if absent it was not). Format `1` provides a moderate level of information for analysis - including the true/correct word. Format `2` provides privacy for the test data by just containing the number of characters in the word. Format `3` provides the most debugging/analysis information - including all the predictions received from the model being tested.
+    {"completions": [[STRING, STRING, ...],
+                     [STRING, STRING, ...],
+                     ...]}
 
-For example, using format `1`, log lines might take the form (with line breaks added for readability, and the newline required by jsonlines replaced with `<NEWLINE>`):
+Completions is a jagged 2D array of completions, such that `completions[i][j]` corresponds to the suffix predicted after typing `i` characters at prediction index `j`. For example, if the target is `"Hello"`, the completions array might be:
 
-    {"userId": "aaa", "timestamp": 10000, "trainingChars": 0,
-     "wordPredictions": [{"score": -1, "rank": 2, "target": "Hi"},
-                         {"target": "Amelia"},
-                         {"score": -3, "rank": 14, "target": "yeah"}]}<NEWLINE>
-    {"userId": "aaa", "timestamp": 20000, "trainingChars": 20,
-     "wordPredictions": [{"target": "Gonna"},
-                         {"score": -2, "rank": 9, "target": "go"}]}<NEWLINE>
+    [["Good", "Hi", "Are"],
+     ["i", "ow", "e"],
+     ["llo", "lp", "lpful"],
+     ["lo", "p", "pful"],
+     ["o", "enistic"]]
 
-### `tc` logs
+I.e. the second row corresponds to the predictions `["Hi", "How", "He"]` (or, the whole word is reconstructed using `target[:i] + completions[i][j]`).
 
-Log lines from `tc` contain an additional key `textCompletions`, which maps to one of the following structures (depending on privacy settings):
+If running `wc` in "fast" mode, only `completions[0][:]` is present - as this corresponds to zero characters of prefix, which is next-word-prediction.
 
-    1. [{"score": NUMBER, "rank": NUMBER, "target": STRING}...]
-    2. [{"score": NUMBER, "rank": NUMBER, "targetChars": NUMBER}...]
+### `we` & `ce` logs
 
-In every format, `rank` provides the fundamental analysis mechanism (if present, the target sequence was predicted, if absent it was typed character-by-character). Format `1` provides a full information for analysis - including the true/correct text. Format `2` provides privacy for the test data by just containing the number of characters in the text that was typed or predicted.
+Log lines from `we` or `ce` contain an additional key `logp`, which records the log probability of this word or character target, or `null` if the target is not in the language model vocabulary. It is the responsibility of the model/evaluator to ensure that `logp` is normalized over the vocabulary (therefore it should, in general, be negative).
 
-For example, using format `1`, log lines might take the form (with line breaks added for readability, and the newline required by jsonlines replaced with `<NEWLINE>`):
+### `wr` logs
 
-    {"userId": "aaa", "timestamp": 10000, "trainingChars": 0,
-     "textCompletions": [{"target": "H"},
-                         {"score": -3, "rank": 1, "target": "ello"},
-                         {"target": " Amel"},
-                         {"score": -3, "rank": 1, "target": "ia"}]}<NEWLINE>
-    {"userId": "bbb", "timestamp": 9000, "trainingChars": 0,
-     "textCompletions": [{"target": "Geeza, a"},
-                         {"score": -5, "rank": 2, "target": "re"}]}<NEWLINE>
+Log lines from `wr` contain the additional keys `verbatim`, which records the most likely corruption and  `results`, which records corruption/correction candidates and scores (both from the language model, and the true error model).
 
-### `ic` logs
+    {"verbatim": STRING,
+     "results": [[STRING, NUMBER, NUMBER|NULL],
+                 ...]}
 
-Log lines from `ic` contain an additional key `inputCorrections`, which maps to one of the following structures (depending on privacy settings):
+Each entry in results is an evaluated candidate, with a candidate string (which may be the same as the target or the verbatim), error model score and language model score. For example if the target is `"can"`:
 
-    1. [{"score": [NUMBER, NUMBER|null], "target": STRING, "verbatim": STRING, "candidates": [ [STRING, NUMBER, NUMBER|null]...]}...]
-    2. [{"score": [NUMBER, NUMBER|null], "targetChars": NUMBER, "verbatimMatch": BOOLEAN, "candidates": [ [NUMBER, NUMBER|null]...]}...]
+    {"verbatim": "caj",
+     "results": [["caj", 0.0, null],
+                 ["can", -3.0, -2.5],
+                 ["cab", -3.0, -2.8],
+                 ["fab", -6.0, -3.2]]}
 
-Note that these formats don't provide quite as much high-level information as `wp` and `tc` - instead `ic` simply includes the scores emitted from the language model and the error evaluation model - it makes no attempt to combine these scores, or calculate ranks / hits. The reason for this is that there is no prior assumption for how to combine the two scores. The `score` for the target is given as `[error_score, language_score]`, and for candidates either format `1: [candidate_text, error_score, language_score]`, or format `2: [error_score, language_score]`, as per `score` (if privacy settings do not allow the text to be included). An evaluation script will likely first combine the pairs of scores using some scheme, before calculating the rank of the correct candidate under that scheme (this allows the evaluation script to try multiple schemes and select the best).
+In this way, the list of results should include a candidate for the verbatim, and a candidate for the true target, as well as a number of other candidates, which are found by the evaluator to be likely given the corruption, and are included to confuse a language model, forcing it to disambiguate the true target.
 
-For example, using format `1`, log lines might take the form (with line breaks added for readability, and the newline required by jsonlines replaced with `<NEWLINE>`):
-
-    {"userId": "aaa", "timestamp": 10000, "trainingChars": 0,
-     "inputCorrections": [{"score": [-5, -2], "target": "Hi", "verbatim": "Ho", "candidates": [
-                              ["Ho", 0, -9], ["Hop", -4, -4], ["Hi", -5, -2]
-                          ]},
-                          {"score": [-7, -10], "target": "Amelia", "verbatim": "Amlua", "candidates": [
-                              ["Amelia", -7, -10], ["Amlua", 0, null],
-                          ]}]}<NEWLINE>
+After a error-LM mixture model has been fitted to the log, an additional element is appended to each array, containing the combined score from the combined model (which should not be null). This is the final sort order of candidates.

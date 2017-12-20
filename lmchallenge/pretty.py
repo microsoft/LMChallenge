@@ -1,359 +1,448 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Utility for pretty-printing the model performance from a ``wp``,
-``tc``, or ``ic`` log file.
+'''Pretty-print the model performance from an LM Challenge log file,
+in ANSI colour or HTML format.
 '''
 
-import errno
 import click
 import io
-import collections
+import os
+import tempfile
+import logging
+import urllib.request
+import hashlib
+import json
+import string
+import itertools as it
 from . import stats
 from .core import common
 
 
-# Utilities
+# Rendering utilities
 
-class AnsiRender:
-    '''A helper for rendering in ANSI color codes'''
+class Renderer:
+    '''Base class for rendering selected/unselected tokens.
+    '''
+    def __call__(self, datum, out):
+        '''Called to render a token (which has not been "deselected") to the
+        AnsiRender instance "out".
 
-    BLACK = 0
-    RED = 1
-    GREEN = 2
-    YELLOW = 3
-    BLUE = 4
-    MAGENTA = 5
-    CYAN = 6
-    WHITE = 7
-    DEFAULT = 9
+        `datum` -- `dict` -- log datum to render
 
-    def __init__(self, outf):
-        self.f = outf
-        self.index = self.DEFAULT
-        self.bold = False
-
-    def default(self):
-        self.color(self.DEFAULT, False)
-
-    def color(self, index, bold):
-        if self.bold and not bold:
-            self.f.write(u'\x1b[0;%dm' % (30 + index))
-        elif bold and not self.bold:
-            self.f.write(u'\x1b[1;%dm' % (30 + index))
-        elif self.index != index:
-            self.f.write(u'\x1b[%dm' % (30 + index))
-        self.index = index
-        self.bold = bold
-
-    def write(self, s):
-        self.f.write(s)
-
-    def close(self):
-        self.f.close()
-
-
-# Specific challenge programs
-
-class Wp:
-    @staticmethod
-    def target_rendering(token_info):
-        '''Get a string rendering of a token_info (which may be redacted
-        as *****).
+        `out` -- `lmchallenge.core.common.AnsiRender` -- output of rendering
         '''
-        return token_info.get('target') or ('*' * token_info['targetChars'])
+        raise NotImplementedError
 
-    @staticmethod
-    def best_rank(ranks, rank_when_missing=None):
-        try:
-            return min(r for r in ranks if r is not None)
-        except ValueError:
-            # min of empty sequence
-            return rank_when_missing
-
-    def __init__(self, filter):
-        self.filter = filter
-
-    def render_pretty(self, row, out):
-        '''Render a word-by-word next-word-prediction display
-        - top prediction: bold green
-        - 2nd/3rd prediction: green
-        - any other prediction: yellow
-        - not predicted: red
+    def html_setup(self, data, float_format):
+        '''The setup command for a standalone HTML page with the given data.
         '''
-        for word_info in row['wordPredictions']:
-            word = word_info.get('target')
-            rank = word_info.get('rank')
-            if word is not None and not self.filter(word):
-                out.color(AnsiRender.BLUE, False)
-            elif rank is None:
-                out.color(AnsiRender.RED, False)
-            elif rank < 1:
-                out.color(AnsiRender.GREEN, True)
-            elif rank < 3:
-                out.color(AnsiRender.GREEN, False)
-            else:
-                out.color(AnsiRender.YELLOW, False)
-            out.write(Wp.target_rendering(word_info) + ' ')
-        out.default()
-
-    def render_diff(self, baselines, line, out):
-        '''Render a comparison of a model's rankings against one or more
-        baselines.
-        '''
-        infos = zip(*(x['wordPredictions'] for x in (line,) + baselines))
-        for word_info, *baseline_infos in infos:
-            target_render = Wp.target_rendering(word_info)
-            baseline_target_render = map(Wp.target_rendering, baseline_infos)
-            if not all(bt == target_render for bt in baseline_target_render):
-                raise ValueError(
-                    'sequence of target terms doesn\'t align between'
-                    ' evaluation runs being compared')
-
-            rank = word_info.get('rank', 1e10)
-            best_baseline_rank = Wp.best_rank(b.get('rank', 1e10)
-                                              for b in baseline_infos)
-            bold = ((best_baseline_rank <= 1 and rank > 1) or
-                    (rank <= 1 and best_baseline_rank > 1) or
-                    (best_baseline_rank <= 3 and rank > 3) or
-                    (rank <= 3 and best_baseline_rank > 3))
-            target = word_info.get('target')
-            if target is not None and not self.filter(target):
-                out.color(AnsiRender.BLUE, False)
-            elif best_baseline_rank < rank:
-                out.color(AnsiRender.RED, bold)
-            elif rank < best_baseline_rank:
-                out.color(AnsiRender.GREEN, bold)
-            else:
-                out.default()
-            out.write(target_render + ' ')
-        out.default()
+        raise NotImplementedError
 
 
-class Tc:
-    CharacterState = collections.namedtuple(
-        'CharacterState', ['char', 'rank', 'autopredicted']
-    )
+class RenderCompletion(Renderer):
+    '''Pretty-print a token to show next-word-prediction/completion.
 
-    @staticmethod
-    def get_character_states(row):
-        '''Return a flattened sequence of CharacterStates from a result.
-        '''
-        for token_info in row['textCompletions']:
-            target = token_info.get('target')
-            rank = token_info.get('rank')
-            auto = False
-            for ch in (target or [None] * token_info['targetChars']):
-                yield Tc.CharacterState(ch, rank, auto)
-                auto = True
+    If the token is next-word predicted, the entire token is green (and
+    bold if it is top-prediction). Otherwise, characters that must be typed
+    before the token is predicted @2 are coloured red, and completed
+    characters are yellow:
 
-    def __init__(self, filter):
-        self.filter = filter
+    +---------------------------+--------------+
+    | Case                      | Color        |
+    +===========================+==============+
+    | Next word prediction @1   | Bold Green   |
+    | Next word prediction @3   | Green        |
+    | Unpredicted characters @2 | Red          |
+    | Predicted characters @2   | Black (Grey) |
+    +---------------------------+--------------+
+    '''
+    def __call__(self, datum, out):
+        ranks = [common.rank(cs, datum['target'][i:]) or float('inf')
+                 for i, cs in enumerate(datum['completions'])]
 
-    def render_pretty(self, row, out):
-        '''Render a colored version of a single model's text completion performance.
-        - first predicted character: yellow
-        - subsequent predicted characters: green
-        - not predicted: red
-        - ignored: blue
-        '''
-        for char, rank, autopredicted in Tc.get_character_states(row):
-            if char is not None and not self.filter(char):
-                out.color(AnsiRender.BLUE, False)
-            elif rank is None:
-                out.color(AnsiRender.RED, False)
-            elif not autopredicted:
-                out.color(AnsiRender.YELLOW, False)
-            else:
-                out.color(AnsiRender.GREEN, False)
-            out.write(char or '*')
-        out.default()
+        # First check for prediction
+        if len(ranks) == 0:
+            # Should not happen
+            out.default()
+            out.write(datum['target'])
+        elif ranks[0] <= 1:
+            out.color(out.GREEN, True)
+            out.write(datum['target'])
+        elif ranks[0] <= 3:
+            out.color(out.GREEN, False)
+            out.write(datum['target'])
+        else:
+            # Then completion
+            typed = next((i for i, r in enumerate(ranks) if r <= 2),
+                         len(datum['target']))
+            out.color(out.RED, False)
+            out.write(datum['target'][:typed])
+            out.color(out.BLACK, False)
+            out.write(datum['target'][typed:])
 
-    def render_diff(self, baselines, line, out):
-        partitions = (Tc.get_character_states(x) for x in (line,) + baselines)
-        for (char, rank, autopredicted), *baseline_states in zip(*partitions):
-            if not all(state.char == char for state in baseline_states):
-                raise ValueError(
-                    'sequence of characters doesn\'t align between evaluation'
-                    ' runs being compared')
-            predicted = rank is not None
-            predicted_baseline = any(state.rank is not None
-                                     for state in baseline_states)
-            if char is not None and not self.filter(char):
-                out.color(AnsiRender.BLUE, False)
-            elif (not predicted) and (not predicted_baseline):
-                out.color(AnsiRender.DEFAULT, False)
-            elif predicted and predicted_baseline:
-                out.color(AnsiRender.CYAN, False)
-            elif predicted and (not predicted_baseline):
-                out.color(AnsiRender.GREEN, False)
-            elif (not predicted) and predicted_baseline:
-                out.color(AnsiRender.RED, False)
-            else:
-                assert False, 'should-be-unreachable code'
-            out.write(char or '*')
-        out.default()
+    def html_setup(self, data, float_format):
+        return string.Template(
+            'setup_wc(${DATA});'
+        ).substitute(DATA=_json_dumps_min(data, float_format=float_format))
 
 
-class Ic:
-    def __init__(self, filter):
-        self.filter = filter
+class RenderEntropy(Renderer):
+    '''Pretty-print a token to show entropy contribution.
 
-    def preprocess(self, data, alpha, oov_penalty):
-        '''Compute the target ranking with the given mixing settings,
-        and store it back in the log.
-        Yields a copy of data, with additional word_info:
+        +-------------+------------+
+        | Entropy     | Color      |
+        +=============+============+
+        |    Skip     | Blue       |
+        +-------------+------------+
+        |   Unknown   | Magenta    |
+        +-------------+------------+
+        |   0  - i/5  | Bold Green |
+        |  i/5 - 2i/5 | Green      |
+        | 2i/5 - 3i/5 | Yellow     |
+        | 3i/5 - 4i/5 | Red        |
+        | 4i/5 - ...  | Bold Red   |
+        +-------------+------------+
+    '''
+    def __init__(self, interval):
+        self._interval = interval
 
-        ``rank`` - INT - the rank of the correct word
-        '''
-        for line in data:
-            infos = []
-            for word_info in line['inputCorrections']:
-                out_info = word_info.copy()
-                out_info['rank'] = stats.Ic.rank(
-                    word_info, alpha=alpha, oov_penalty=oov_penalty
-                )
-                infos.append(out_info)
-            out_line = line.copy()
-            out_line['inputCorrections'] = infos
-            yield out_line
+    def __call__(self, datum, out):
+        logp = datum.get('logp')
+        x = self._interval / 5
+        if logp is None:
+            out.color(out.MAGENTA, False)
+        elif -logp < x:
+            out.color(out.GREEN, True)
+        elif -logp < 2 * x:
+            out.color(out.GREEN, False)
+        elif -logp < 3 * x:
+            out.color(out.YELLOW, False)
+        elif -logp < 4 * x:
+            out.color(out.RED, False)
+        else:
+            out.color(out.RED, True)
+        out.write(datum['target'])
 
-    def render_pretty(self, line, out):
-        '''Render a word-by-word correction display:
+    def html_setup(self, data, float_format):
+        return string.Template(
+            'setup_entropy(${DATA}, ${INTERVAL});'
+        ).substitute(
+            DATA=_json_dumps_min(data, float_format=float_format),
+            INTERVAL=self._interval,
+        )
 
-        +-----------+-----------+--------+
-        | Before    | After     | Color  |
-        +===========+===========+========+
-        | Incorrect | Incorrect | Yellow |
-        +-----------+-----------+--------+
-        | Incorrect | Correct   | Green  |
-        +-----------+-----------+--------+
-        | Correct   | Incorrect | Red    |
-        +-----------+-----------+--------+
-        | Correct   | Correct   | White  |
-        +-----------+-----------+--------+
-        |        (Skip)         | Blue   |
-        +-----------+-----------+--------+
-        '''
-        for word_info in line['inputCorrections']:
-            word = word_info.get('target')
-            before_after = (
-                stats.Ic.before_pass(word_info),
-                word_info['rank'] == 1
-            )
-            if word is not None and not self.filter(word):
-                out.color(AnsiRender.BLUE, False)
-            elif before_after == (False, False):
-                out.color(AnsiRender.YELLOW, False)
-            elif before_after == (False, True):
-                out.color(AnsiRender.GREEN, False)
-            elif before_after == (True, False):
-                out.color(AnsiRender.RED, False)
-            else:  # (True, True)
-                out.color(AnsiRender.DEFAULT, False)
-            out.write(Wp.target_rendering(word_info) + ' ')
-        out.default()
 
-    def render_diff(self, baselines, line, out):
-        '''Render the difference between the best of 'baselines'
-        (a tuple of lines) and 'line'.
+class RenderReranking(Renderer):
+    '''Pretty-print a token to show correction.
 
-        Examples are rendered as follows. Where the color is marked with a
-        star, and the original was correct, the output is marked bold.
-
-        +-----------+-----------+--------++
-        | Baseline  | Actual    | Color   |
+        +-----------+-----------+---------+
+        | Before    | After     | Color   |
         +===========+===========+=========+
-        | Incorrect | Incorrect | Yellow* |
+        |         Skip          | Blue    |
         +-----------+-----------+---------+
-        | Incorrect | Correct   | Green*  |
+        | Incorrect | Incorrect | Yellow  |
         +-----------+-----------+---------+
-        | Correct   | Incorrect | Red*    |
+        | Incorrect | Correct   | Green   |
+        +-----------+-----------+---------+
+        | Correct   | Incorrect | Red     |
         +-----------+-----------+---------+
         | Correct   | Correct   | White   |
         +-----------+-----------+---------+
-        |        (Skip)         | Blue    |
-        +-----------+-----------+---------+
-        '''
-        infos = zip(*(x['inputCorrections'] for x in (line,) + baselines))
-        for word_info, *baseline_word_infos in infos:
-            before = stats.Ic.before_pass(word_info)
-            baseline_actual = (
-                1 == min(x['rank'] for x in baseline_word_infos),
-                1 == word_info['rank']
-            )
-            word = word_info.get('target')
-            if word is not None and not self.filter(word):
-                out.color(AnsiRender.BLUE, False)
-            elif baseline_actual == (False, False):
-                out.color(AnsiRender.YELLOW, before)
-            elif baseline_actual == (False, True):
-                out.color(AnsiRender.GREEN, before)
-            elif baseline_actual == (True, False):
-                out.color(AnsiRender.RED, before)
-            else:  # (True, True)
-                out.color(AnsiRender.DEFAULT, False)
-            out.write(Wp.target_rendering(word_info) + ' ')
-        out.default()
-
-
-# Generic pretty printing
-
-def pretty(*data, filter=common.TokenFilter.all, opt_args=None):
-    '''Compute and return the pretty-printed difference between ``data`` and
-    ``baseline_data`` (if specified, otherwise just the absolute performance of
-    ``data``.)
-
-    ``data`` - a list of (1+) lists of log lines
-               (e.g. each from ``common.read_jsonlines``)
-
-    ``returns`` - a generator of strings containing ANSI color codes
     '''
-    pretty_program = common.autodetect_log(data[0], wp=Wp, tc=Tc, ic=Ic)(
-        filter=filter
-    )
-    if opt_args:
-        data = [pretty_program.preprocess(d, **args)
-                for d, args in common.zip_special(data, opt_args)]
+    def __init__(self, model):
+        self._model = model
 
-    for lines in zip(*data):
-        out = AnsiRender(io.StringIO())
-        if 2 <= len(lines):
-            pretty_program.render_diff(tuple(lines[:-1]), lines[-1], out)
+    @staticmethod
+    def is_correct(target, results, model):
+        scores = ((t, model(e, lm))
+                  for t, e, lm in results)
+        target_score = next(score for t, score in scores if t == target)
+        return all(score < target_score
+                   for t, score in scores if t != target)
+
+    def __call__(self, datum, out):
+        target = datum['target']
+        results = datum['results']
+        pre = self.is_correct(target, results, lambda e, lm: e)
+        post = self.is_correct(target, results, self._model)
+        if (pre, post) == (False, False):
+            # unchanged incorrect
+            out.color(out.YELLOW, False)
+        elif (pre, post) == (False, True):
+            # corrected
+            out.color(out.GREEN, False)
+        elif (pre, post) == (True, False):
+            # miscorrected
+            out.color(out.RED, False)
         else:
-            pretty_program.render_pretty(lines[0], out)
-        yield out.f.getvalue()
+            # unchanged correct
+            out.default()
+        out.write(datum['target'])
+
+    def html_setup(self, data, float_format):
+        data = list(_log_combined_score(data, self._model))
+        return string.Template(
+            'setup_wr(${DATA}, "${MODEL}");'
+        ).substitute(
+            DATA=_json_dumps_min(data, float_format=float_format),
+            MODEL=str(self._model),
+        )
+
+
+# HTML rendering
+
+def _read_data_file(name):
+    '''Read a file from the bundled 'lmchallenge/data' directory, and return
+    the contents as a string.
+    '''
+    with open(os.path.join(os.path.dirname(__file__), 'data', name)) as f:
+        return f.read()
+
+
+def _download_cache_cdn(url, sha_384):
+    '''Download a file from 'url', which should have the SHA384 matching
+    'sha_384' (which should be a hex string).
+    '''
+    root = os.path.join(tempfile.gettempdir(), 'lmc_pretty')
+    if not os.path.isdir(root):
+        os.makedirs(root)
+
+    target = os.path.join(root, sha_384)
+    if not os.path.isfile(target):
+        logging.info('Downloading %s -> %s', url, target)
+        urllib.request.urlretrieve(url, target)
+        with open(target, 'rb') as f:
+            h = hashlib.sha384()
+            h.update(f.read())
+            if h.hexdigest() != sha_384:
+                logging.error('Checksum mismatch between %s, %s',
+                              url, target)
+                raise IOError('Checksum mismatch between %s, %s:'
+                              ' expected %s actual %s',
+                              url, target, h.hexdigest(), sha_384)
+
+    with open(target) as f:
+        return f.read()
+
+
+def _get_viewer_files():
+    '''Returns a dictionary of {KEY: DATA} for all the supplementary js & css
+    data files needed to render the standalone html page.
+    '''
+    # Note: to get the checksums:
+    #   wget https://URL -O - | sha384sum
+    return dict(
+        LMC_VIEWER_HTML=_read_data_file('viewer.html'),
+        LMC_VIEWER_CSS=_read_data_file('viewer.css'),
+        LMC_VIEWER_JS=_read_data_file('viewer.js'),
+        BOOTSTRAP_CSS=_download_cache_cdn(
+            'https://'
+            'maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css',
+            'd6af264c93804b1f23d40bbe6b95835673e2da59057f0c04'
+            '01af210c3763665a4b7a0c618d5304d5f82358f1a6933b3b'
+        ),
+        BOOTSTRAP_JS=_download_cache_cdn(
+            'https://'
+            'maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js',
+            'd2649b24310789a95f9ae04140fe80e10ae9aeae4e55f5b7'
+            'ecf451de3e442eac6cb35c95a8eb677a99c754ff5a27bc52'
+        ),
+        JQUERY_JS=_download_cache_cdn(
+            'https://code.jquery.com/jquery-2.2.4.min.js',
+            'ad8fe3bfc98c86a0da6d74a8f940a082a2ad76605f777a82'
+            'dbf2afc930cd43a3dc5095dac4ad6d31ea6841d6b8839bc1'
+        ),
+        D3_JS=_download_cache_cdn(
+            'https://cdnjs.cloudflare.com/ajax/libs/d3/3.5.17/d3.min.js',
+            '37c10fd189a5d2337b7b40dc5e567aaedfa2a8a53d0a4e9f'
+            'd5943e8f6a6ec5ab6706ae24f44f10eafa81718df82cd6e7'
+        ),
+    )
+
+
+def _json_dumps_min(data, float_format=''):
+    '''Tiny JSON serializer that supports strings, ints, floats, tuples, lists
+    and dictionaries.
+
+    Compared to json.dumps, allows a format to specified for floating point
+    values.
+    '''
+    out = io.StringIO()
+
+    def visit(node):
+        if node is None:
+            out.write('null')
+        elif isinstance(node, str):
+            out.write(json.dumps(node))
+        elif isinstance(node, bool):
+            out.write('true' if node else 'false')
+        elif isinstance(node, int):
+            out.write(str(node))
+        elif isinstance(node, float):
+            out.write(format(node, float_format))
+        elif isinstance(node, (tuple, list)):
+            out.write('[')
+            for i, x in enumerate(node):
+                if i != 0:
+                    out.write(',')
+                visit(x)
+            out.write(']')
+        elif isinstance(node, dict):
+            out.write('{')
+            for i, k in enumerate(node):
+                if i != 0:
+                    out.write(',')
+                visit(k)
+                out.write(':')
+                visit(node[k])
+            out.write('}')
+        else:
+            raise ValueError(
+                'Unexpected value for JSON conversion: {}'.format(node))
+    visit(data)
+    return out.getvalue()
+
+
+def _log_combined_score(data, model):
+    '''Add the combined score to the word reranking results in the log, and
+    sort descending score.
+    '''
+    for datum in data:
+        datum = datum.copy()
+        datum['results'] = list(sorted(
+            ((candidate, error_score, lm_score, model(error_score, lm_score))
+             for candidate, error_score, lm_score in datum['results']),
+            key=lambda x: -x[-1]
+        ))
+        yield datum
+
+
+# Toplevel rendering functions
+
+def render_ansi(data, renderer):
+    '''Render an LMC log to a colourized line-based output.
+
+    `data` -- `generator(dict)` -- LM Challenge log
+
+    `renderer` -- `lmchallenge.pretty.Renderer` -- to render the log
+
+    `return` -- `generator(string)` -- generates ANSI-formatted lines
+    '''
+    for _, msg_data in it.groupby(
+            data, lambda d: (d.get('user'), d.get('message'))):
+        with io.StringIO() as f:
+            out = common.AnsiRender(f)
+            char_n = 0
+            for datum in msg_data:
+                if char_n < datum['character']:
+                    out.write(' ')
+                char_n = datum['character'] + len(datum['target'])
+                if common.is_selected(datum):
+                    renderer(datum, out)
+                else:
+                    out.color(out.BLUE, bold=False)
+                    out.write(datum['target'])
+            out.default()
+            yield f.getvalue()
+
+
+def render_html(data, renderer, float_format):
+    '''Render an LMC log to a standalone (and mildly interactive) HTML file.
+
+    `data` -- `generator(dict)` -- LM Challenge log
+
+    `renderer` -- `lmchallenge.pretty.Renderer` -- to render the log
+
+    `float_format` -- `string` -- format string for floating point numbers in
+                      the resulting HTML file's compact JSON log
+
+    `return` -- `string` -- standalone HTML
+    '''
+    # Render the HTML file, with all dependencies inlined
+    files = _get_viewer_files()
+    return string.Template(files['LMC_VIEWER_HTML']).substitute(
+        LMC_SETUP=renderer.html_setup(data, float_format), **files
+    )
+
+
+# Script
+
+class ChallengeChoice(common.ChallengeChoice):
+    '''Select a pretty printing program.
+    '''
+    @staticmethod
+    def completion(data, **args):
+        return RenderCompletion()
+
+    @staticmethod
+    def entropy(data, entropy_interval, **args):
+        return RenderEntropy(interval=entropy_interval)
+
+    @staticmethod
+    def reranking(data, **args):
+        return RenderReranking(model=stats.Reranking.build_model(data))
+
+
+class OutputChoice(common.ParamChoice):
+    '''Select an output format.
+    '''
+    name = 'output'
+    choices = ['ansi', 'html']
+
+    @staticmethod
+    def ansi(data, renderer, **args):
+        for line in render_ansi(data, renderer):
+            print(line)
+
+    @staticmethod
+    def html(data, renderer, float_format, **args):
+        print(render_html(data, renderer, float_format=float_format))
+
+
+def ansi(data, entropy_interval=10.0):
+    '''Render and return an ANSI-formatted pretty-printing of a LM Challenge log.
+
+    `data` -- `iterable(dict)` -- LM Challenge log
+
+    `return` -- `iterable(string)` -- ANSI-coloured rendering of the log
+    '''
+    data = list(data)
+    return render_ansi(
+        data,
+        ChallengeChoice.auto(
+            data, entropy_interval=entropy_interval))
 
 
 @click.command()
-@click.argument('log', nargs=-1, type=click.Path(exists=True, dir_okay=False))
-@click.option('-f', '--filter', type=common.TokenFilter(),
-              default='alphaemoji',
-              help='Only count tokens which match this filter.')
-@click.option('-a', '--opt-args', type=common.JsonParam(), multiple=True,
-              help='Pass these arguments to the pretty program (for ``ic``),'
-              ' for example pre-computed using ``lmc ic-opt``.'
-              ' If comparing to baselines, we expect multiple arguments - the'
-              ' same number as the number of log files passed.')
-def cli(log, **args):
-    '''Pretty-print results from an LMChallenge game (using ANSI color codes).
-
-    If multiple files are specified, use all but the last as 'baselines',
-    then pretty-print the differences against the best of a set of baseline
-    results (the best at each individual location is used).
-
-    Otherwise pretty-print the basic quality of results.
+@click.argument('log', nargs=-1, type=click.Path(dir_okay=False))
+@click.option('-v', '--verbose', default=0, count=True,
+              help='How much human-readable detail to print to STDERR')
+@click.option('-c', '--challenge', type=ChallengeChoice(),
+              default='auto',
+              help='Select which challenge to view (in the case where there'
+              ' are multiple challenges in a single log)')
+@click.option('-o', '--output', type=OutputChoice(),
+              default='ansi',
+              help='Select whether to use a simple ANSI format, or an'
+              ' all-in-one html page to show results')
+@click.option('-i', '--entropy_interval', default=10.0,
+              help='Interval to show entropy differences over (should be'
+              ' positive)')
+@click.option('-m', '--float-format', default='.4g',
+              help='The format of floats in the JSON file (use compact'
+              ' representations to save file size)')
+def cli(log, verbose, challenge, output, entropy_interval, float_format):
+    '''Pretty-print results from LM Challenge (using ANSI color codes).
     '''
-    if len(log) == 0:
-        log = ['-']
-    try:
-        for line in pretty(*map(common.read_jsonlines, log), **args):
-            # We don't want click.echo's clever handling of colors - we want to
-            # always include them
-            print(line)
-    except IOError as e:
-        if e.errno == errno.EPIPE:
-            pass
+    common.verbosity(verbose)
+
+    # list() because of multiple traverse (in the case of reranking)
+    data = list(common.load_jsonlines(common.single_log(log)))
+
+    renderer = challenge(data, entropy_interval=entropy_interval)
+
+    output(data, renderer, float_format=float_format)
 
 
 __doc__ += common.shell_docstring(cli, 'lmc pretty')

@@ -1,0 +1,72 @@
+{
+    "$schema": "http://json-schema.org/schema#",
+
+    "title": "LM Challenge log format",
+    "description": "Validate any log datum against the LM Challenge log file specification. A log file should consist of JSONlines encoded items that match this schema.",
+
+    "type": "object",
+
+    "properties": {
+        "user": {"type": ["string", "null"]},
+        "character": {"type": "number"},
+        "message": {"type": "number"},
+        "token": {"type": "number"},
+        "target": {"type": "string"},
+        "select": {"type": "boolean"},
+
+        "logp": {
+            "title": "(Character|Word) Entropy result",
+            "type": ["number", "null"]
+        },
+
+        "completions": {
+            "title": "Word Completion result",
+            "type": "array",
+            "items": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                    "type": "string"
+                }
+            }
+        },
+
+        "results": {
+            "title": "Word Reranking result",
+            "type": "array",
+            "items": {
+                "type": "array",
+                "minItems": 3,
+                "additionalItems": false,
+                "items": [
+                    {
+                        "title": "Candidate",
+                        "type": "string"
+                    },
+                    {
+                        "title": "Error score",
+                        "type": "number",
+                        "maximum": 0
+                    },
+                    {
+                        "title": "LM score",
+                        "type": ["number", "null"]
+                    },
+                    {
+                        "title": "Combined score (optional)",
+                        "type": "number"
+                    }
+                ]
+            }
+        },
+        "verbatim": {"type": "string"}
+    },
+
+    "required": [
+        "user", "character", "message", "token", "target"
+    ],
+    "dependencies": {
+        "results": ["verbatim"],
+        "verbatim": ["results"]
+    }
+}
