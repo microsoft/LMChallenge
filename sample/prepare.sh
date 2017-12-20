@@ -10,8 +10,8 @@ DATA="data"
 mkdir -p ${DATA}
 
 echo "# Downloading data"
-wget -O "${DATA}/raw.zip" "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip"
-unzip -j "${DATA}/raw.zip" -d "${DATA}"
+wget --show-progress -qO "${DATA}/raw.zip" "https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-2-v1.zip"
+unzip -qj "${DATA}/raw.zip" -d "${DATA}"
 
 echo "# Creating correction vocab"
 cat ${DATA}/*.tokens   \

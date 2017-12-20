@@ -29,11 +29,11 @@ Install LM Challenge from the published Python package:
     cd sample/
     ./prepare.sh
 
-**Model REPL:** Now you can use the example script to evaluate a very basic ngram model:
+**Model REPL:** Now you can use the example script to evaluate a very basic ngram model (see [ngram.py](sample/ngram.py), which you may find useful if integrating your own prediction model). _Note that this command will not terminate, as it launches an interactive program:_
 
     python3 ngram.py words data/words.3gram
 
-This starts an interactive prompt which can accept commands of a single word followed by a hard TAB character and any arguments, for example:
+This starts an interactive program which can accept commands of a single word followed by a hard `TAB` character and any arguments, for example:
 
     > predict<TAB>
     =    0.0000    The    -1.0000    In    -2.0000...
@@ -73,7 +73,7 @@ Filter the log for only capitalized words, and print summary statistics:
 
 You should notice that capitalized words are (in this small, statistically insignificant example), much harder to predict than words in general.
 
-**Other challenges:** Other games are run & inepected in a similar way, see `lmc run --help`.
+**Other challenges:** Other LM challenges can be run & inspected in a similar way, see `lmc run --help`.
 
 
 ## Running LM Challenge
