@@ -1,12 +1,12 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-"""Utilities for corrupting and correcting text, for use with `lmchallenge.wr`.
+'''Utilities for corrupting and correcting text, for use with `lmchallenge.wr`.
 
 Currently the implemented corruption is very simple - corrupt each character
 with a low probability of it being replaced by another ASCII letter (or in-word
 punctuation character).
-"""
+'''
 
 import random
 import math
@@ -20,8 +20,8 @@ DEFAULT_CONFIG = dict(
 
 
 def corrupt(config, word, rand=random):
-    """Generate a corrupted version of a word, as if typed by a sloppy typist.
-    """
+    '''Generate a corrupted version of a word, as if typed by a sloppy typist.
+    '''
     p_anykey = config['p_anykey']
     error_chars = config['error_chars']
     return ''.join(
@@ -31,9 +31,9 @@ def corrupt(config, word, rand=random):
 
 
 def score(config, input_word, word):
-    """Return an approximate score for this word, given the error model of
+    '''Return an approximate score for this word, given the error model of
     'config'.
-    """
+    '''
     p_anykey = config['p_anykey']
     n_correct = sum(a == b for a, b in zip(input_word, word))
     return n_correct * math.log(1 - p_anykey) + \
@@ -41,8 +41,8 @@ def score(config, input_word, word):
 
 
 class Search:
-    """Functor for finding a list of nearby candidates to a corrupted word.
-    """
+    '''Functor for finding a list of nearby candidates to a corrupted word.
+    '''
     def __init__(self, words):
         self.words = {}
         for w in words:

@@ -1,8 +1,8 @@
 {
     "$schema": "http://json-schema.org/schema#",
 
-    "title": "LMChallenge log format",
-    "description": "Validate any log datum against the LMChallenge log file specification. A log file should consist of JSONlines encoded items that match this schema.",
+    "title": "LM Challenge log format",
+    "description": "Validate any log datum against the LM Challenge log file specification. A log file should consist of JSONlines encoded items that match this schema.",
 
     "type": "object",
 

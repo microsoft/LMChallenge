@@ -1,7 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Main entry point into the evaluation utilities.
+'''Run evaluation utilities over a model, to generate LM Challenge logs.
 '''
 
 import click
@@ -17,18 +17,20 @@ from .core import common, errors, model
 # Helpers
 
 def find_tokens(text, tokenizer):
-    '''Return a generator of {"token", "character", "target"} dictionaries by
+    '''Return a generator of `{"token", "character", "target"}` dictionaries by
     tokenizing some text.
 
-    text -- string -- the text to tokenize
+    `text` -- `string` -- the text to tokenize
 
-    tokenizer -- regex.Regex -- the tokenizer to use on the text (supporting
-                                ``finditer``)
+    `tokenizer` -- `regex.Regex` -- the tokenizer to use on the text
+                   (supporting `finditer`)
 
-    returns -- a generator of tokens, which are:
-        token -- index of the token in the message
-        character -- index of the first character of the token in the message
-        target -- the text content of the token itself
+    `return` -- `generator(dict)` -- a generator of tokens, which have keys:
+
+      - `token` -- `int` -- index of the token in the message
+      - `character` -- `int` -- index of the first character of the token in
+                       the message
+      - `target` -- `string` -- the text content of the token itself
     '''
     for i, m in enumerate(tokenizer.finditer(text)):
         yield dict(token=i, character=m.span()[0], target=m.group())
@@ -37,14 +39,14 @@ def find_tokens(text, tokenizer):
 def get_completions(model, context, target):
     '''A generator of completions from a model, with successive "typed" prefixes.
 
-    model -- core.model.Model
+    `model` -- `lmchallenge.core.model.Model` -- model to evaluate
 
-    context -- string -- the text before the target
+    `context` -- `string` -- the text before the target
 
-    target -- string -- the token being typed
+    `target` -- `string` -- the token being typed
 
-    returns -- a generator of lists of string predictions, at each point
-               while typing out ``target``
+    `return` -- `generator(list(string))` -- generates lists of string
+                predictions, at each point while typing out `target`
     '''
     for i in range(len(target)):
         yield [w for w, s in model.predict(context + target[:i], None)]
@@ -67,8 +69,8 @@ def get_logp(model, context, target):
 def evaluate_completions(model, context, target, next_word_only):
     '''Evaluator for Word Completion.
 
-    next_word_only -- bool -- save time by only producing results for
-                              next-word-prediction (i.e. no completion)
+    `next_word_only` -- `bool` -- save time by only producing results for
+                        next-word-prediction (i.e. no completion)
     '''
     return dict(completions=list(it.islice(
         get_completions(
@@ -90,13 +92,13 @@ def evaluate_reranking(model, context, target,
                        error_config, search, num_candidates, rand):
     '''Evaluator for Error Reranking.
 
-    error_config -- dict -- for lmchallenge.core.errors
+    `error_config` -- `dict` -- for `lmchallenge.core.errors`
 
-    serach -- errors.Search -- find nearby words
+    `serach` -- `lmchallenge.core.errors.Search` -- find nearby words
 
-    num_candidates -- int -- number of candidates to search
+    `num_candidates` -- `int` -- number of candidates to search
 
-    rand -- random.Random -- use for corrupting the text
+    `rand` -- `random.Random` -- use for corrupting the text
     '''
     corrupted = errors.corrupt(error_config, target, rand=rand)
 
@@ -128,25 +130,28 @@ def evaluate_reranking(model, context, target,
 def run_tokens(model, data, train, tokenizer, evaluate):
     '''Run a per-token evaluation.
 
-    model -- core.model.Model
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
 
-    data -- an iterable of "message" dictionaries, containing:
-        text -- string -- the contents of the message
-        user -- string (optional) -- a user ID
+    `data` -- `iterable(dict)` -- an iterable of "message" dictionaries,
+              containing:
 
-    train -- bool -- should we train after every message?
+     - `text` -- `string` -- the contents of the message
+     - `user` -- `string` (optional) -- a user ID
 
-    tokenizer -- regex.Regex -- tokenizer for finding tokens in messages
+    `train` -- `bool` -- should we train after every message?
 
-    evaluate -- callable(model, context, target) -> dict -- run evaluation
-                for a single target
+    `tokenizer` -- `regex.Regex` -- tokenizer for finding tokens in messages
 
-    returns -- a generator of result dictionaries, containing:
-        user -- string -- from the message
-        message -- int -- index of message
-        token -- int -- index of token within the message
-        character -- int -- index of character within the message
-        target -- string -- token being typed
+    `evaluate` -- `callable(model, context, target) -> dict` -- runs evaluation
+                  for a single target
+
+    `return` -- `generator(dict)` -- generator of results, containing:
+
+     - `user` -- `string` -- from the message
+     - `message` -- `int` -- index of message
+     - `token` -- `int` -- index of token within the message
+     - `character` -- `int` -- index of character within the message
+     - `target` -- `string` -- token being typed
     '''
     data_by_user = it.groupby(data, lambda x: x.get('user'))
     for user, messages in data_by_user:
@@ -173,16 +178,16 @@ def wc(model, data, train=False, next_word_only=False):
     '''Run the Word Completion task over `model` and `data` to generate a
     result log.
 
-    model -- `lmchallenge.core.model.Model` to evaluate
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
 
-    data -- iterable str or iterable dict -- text data
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
 
-    train -- should the model be trained after each line?
+    `train` -- `bool` -- should the model be trained after each line?
 
-    next_word_only -- speed up evaluation by only evaluating
-                      next-word-prediction, not completion
+    `next_word_only` -- `bool` -- speed up evaluation by only evaluating
+                        next-word-prediction, not completion
 
-    returns -- log -- iterable dict
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
     return run_tokens(
         model,
@@ -205,13 +210,13 @@ def we(model, data, train=False):
     score for any context and target queried. Two models may only be compared
     if they share the same vocabulary.
 
-    model -- `lmchallenge.core.model.Model` to evaluate
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
 
-    data -- iterable str or iterable dict -- text data
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
 
-    train -- should the model be trained after each line?
+    `train` -- `bool` -- should the model be trained after each line?
 
-    returns -- log -- iterable dict
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
     return run_tokens(
         model,
@@ -231,13 +236,13 @@ def ce(model, data, train=False):
     score for any context and target queried. Two models may only be compared
     if they share the same vocabulary.
 
-    model -- `lmchallenge.core.model.Model` to evaluate
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
 
-    data -- iterable str or iterable dict -- text data
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
 
-    train -- should the model be trained after each line?
+    `train` -- `bool` -- should the model be trained after each line?
 
-    returns -- log -- iterable dict
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
     return run_tokens(
         model,
@@ -260,22 +265,23 @@ def wr(model, data, vocab, train=False, seed=42,
     model scores for each candidate that can be combined linearly with the
     error score to rank the candidates and recover the original text.
 
-    model -- `lmchallenge.core.model.Model` to evaluate
+    `model` -- `lmchallenge.core.model.Model` -- to evaluate
 
-    data -- iterable str or iterable dict -- text data
+    `data` -- `iterable(string)` or `iterable(dict)` -- text data
 
-    vocab -- iterable str -- vocabulary of words to corrupt the data to
+    `vocab` -- `iterable(string)` -- vocabulary of words to corrupt the data to
 
-    train -- should the model be trained after each line?
+    `train` -- `bool` -- should the model be trained after each line?
 
-    seed -- random seed to use to generate corrupted candidates
+    `seed` -- `int` or `None` -- random seed to use to generate corrupted
+              candidates
 
-    num_candidates -- number of corrupted candidates to consider
+    `num_candidates` -- `int` -- number of corrupted candidates to consider
 
-    error_config -- see `lmchallenge.core.errors` - defines the generation
-                    and scoring of error candidates
+    `error_config` -- `dict` -- see `lmchallenge.core.errors` - defines the
+                      generation and scoring of error candidates
 
-    returns -- log -- iterable dict
+    `return` -- `iterable(dict)` -- LM Challenge log
     '''
     return run_tokens(
         model,

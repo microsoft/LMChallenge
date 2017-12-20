@@ -29,11 +29,10 @@ def _key_matches(key, pattern):
 def parse_pattern(pattern):
     '''Parses token filter patterns (regexes, with a few predefined values).
 
-    (see cli() for the pattern grammar).
+    `pattern` -- `string` -- see `lmchallenge.grep` for the grammar
+                 (essentially a regex).
 
-    pattern -- a string pattern that conforms to the above scheme
-
-    returns -- a predicate taking a datum from a log file
+    `return` -- `predicate(dict)` -- a predicate taking a datum from a log file
     '''
     if pattern.startswith('$'):
         # predefined target pattern
@@ -69,6 +68,8 @@ def parse_pattern(pattern):
 def parse_patterns_all(*patterns):
     '''Parse each pattern according to `parse_pattern`, then combine them into
     a single predicate, which requires all of them to match.
+
+    See `lmchallenge.grep.parse_pattern`.
     '''
     return common.all_predicates(*(parse_pattern(p) for p in patterns))
 
@@ -77,12 +78,13 @@ def select(data, predicate):
     '''Return a copy of "data" with the "select" key added to each datum, based
     on the outcome of the predicate.
 
-    data -- iterable of log events (if a datum already includes "select", it is
-            combined, `datum["select"] and predicate(datum)`)
+    `data` -- `iterable(dict)` -- LM Challenge log. If a datum already includes
+              `"select"`, it is combined, `datum["select"] and
+              predicate(datum)`).
 
-    predicate -- takes a datum from data
+    `predicate` -- `predicate(dict)` -- accepts a datum from `data`
 
-    returns -- iterable of log events, with the "select" key overridden
+    `return` -- `iterable(dict)` -- LM Challenge log, with the `"select"` key
     '''
     for datum in data:
         datum = datum.copy()
@@ -94,11 +96,11 @@ class Keep(common.ParamChoice):
     '''After passing a log through a 'selector', the methods of this class can
     remove parts of the log that are unnecessary, for example:
 
-    all -- keeps everything
+    `"all"` -- keeps everything
 
-    message -- keeps any message containing a selected token
+    `"message"` -- keeps any message containing a selected token
 
-    token -- keeps only selected tokens themselves
+    `"token"` -- keeps only selected tokens themselves
     '''
     name = 'keep'
     choices = ['all', 'message', 'token']
@@ -126,21 +128,21 @@ def grep(pattern, data, keep='all', and_patterns=[]):
     '''Search for `pattern` in the log `data`, returning a tagged log
     which selects part of the original data.
 
-    pattern -- see `lmchallenge.grep.cli` for the language (essentially a
-               regex)
+    `pattern` -- `string` -- see `lmchallenge.grep` for the grammar
+                 (essentially a regex).
 
-    data -- input log - if a selection has already been applied, sub-selects
-            the log satisfying both selections
+    `data` -- `iterable(dict)` -- LM Challenge log. If a selection has already
+              been applied, sub-selects the log satisfying both selections.
 
-    keep -- string -- either 'all', 'message', or 'token', what elements of
-            the log to return (e.g. 'all' returns the whole log, with a
-            tagged selection, whereas 'token' only returns tokens that match
-            the selection)
+    `keep` -- `string` -- either `"all"`, `"message"`, or `"token"`, what
+              elements of the log to return (e.g. `"all"` returns the whole
+              log, with a tagged selection, whereas `"token"` only returns
+              tokens that match the selection).
 
-    and_patterns -- list -- additional patterns to apply, all of which must
-                    match
+    `and_patterns` -- `list(string)` -- additional patterns to apply, all of
+                   which must match.
 
-    returns -- log -- iterable
+    `return` -- `iterable(dict)` -- LM Challenge log.
     '''
     predicate = parse_patterns_all(*([pattern] + and_patterns))
     return getattr(Keep, keep)(select(data, predicate))

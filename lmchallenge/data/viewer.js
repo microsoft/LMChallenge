@@ -16,9 +16,9 @@ function percent(x) {
 
 // Return the log data, grouped by user's messages
 //   data -- a list of events for tokens
-//   returns -- a list of list of events for each message
-//              (adds the attribute "skip" which is true if
-//              the datum is not a consecutive character)
+//   return -- a list of list of events for each message
+//             (adds the attribute "skip" which is true if
+//             the datum is not a consecutive character)
 function data_by_line(data) {
     var lines = [];
     var user = null;

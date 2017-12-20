@@ -1,8 +1,7 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Aggregate results from ``wc``, ``we``, ``wr``, ``ce`` challenges, and
-calculate summary statistics.
+'''Aggregate results from challenges, and calculate summary statistics.
 '''
 
 import click
@@ -28,12 +27,16 @@ class Accumulator:
 
     def update(self, datum):
         '''Feed a datum into the accumulator, updating the internal state.
+
+        `datum` -- `dict` -- single log datum
         '''
         raise NotImplementedError
 
     @property
     def state(self):
         '''Get the accumulator's current state.
+
+        `return` -- `object` -- current state (snapshot) of the accumulator
         '''
         raise NotImplementedError
 
@@ -348,7 +351,7 @@ class Composite(Accumulator):
 
 
 class Stats(Composite):
-    '''A standard set of useful LMChallenge stats.
+    '''A standard set of useful LM Challenge stats.
     '''
     @classmethod
     def create(cls):
@@ -397,6 +400,11 @@ class Selection(Accumulator):
 
 def humanize(stats):
     '''To be used with the output of the Selection & Stats accumulators.
+
+    `stats` -- `dict` -- as returned by a `lmchallenge.stats.Selection`
+               of `lmchallenge.stats.Stats` accumulator `.state`
+
+    `return` -- `dict` -- human-readable staistics
     '''
     stats = stats.copy()
     r = dict()
@@ -463,14 +471,12 @@ def humanize(stats):
 def stats(data, human=True):
     '''Run the standard set of accumulators over 'data'.
 
-    data -- log -- iterable results log
+    `data` -- `iterable(dict)` -- LM Challenge log
 
-    human -- show human-friendly derivative stats (instead of
-             machine-friendly sums)
+    `human` -- `bool` -- show human-friendly derivative stats
+               (instead of machine-friendly sums)
 
-    returns -- an accumulated (machine-readable) set of stats
-               (can pass this to "humanize" to get a more agreeable
-               format)
+    `return` -- `dict` -- an accumulated dictionary of stats
     '''
     accumulator = Selection.create(child=Stats.create())
     for datum in data:

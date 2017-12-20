@@ -67,27 +67,6 @@ def test_autodetect_input():
         common.autodetect_input([1, 2])
 
 
-def test_zip_special():
-    for a, b, expected in [
-            # some standard cases
-            ("", "", []),
-            ("x", "", [("x", None)]),
-            ("", "y", [(None, "y")]),
-            ("x", "y", [("x", "y")]),
-            ("abc", [1, 2, 3], [("a", 1), ("b", 2), ("c", 3)]),
-
-            # special 'broadcasting' behaviour
-            ("abc", "", [("a", None), ("b", None), ("c", None)]),
-            ("", "xyz", [(None, "x"), (None, "y"), (None, "z")]),
-            ("abc", [42], [("a", 42), ("b", 42), ("c", 42)]),
-            ("a", [1, 2, 3], [("a", 1), ("a", 2), ("a", 3)]),
-    ]:
-        assert expected == list(common.zip_special(a, b))
-
-    with pytest.raises(ValueError):
-        common.zip_special("abcd", [1, 2, 3])
-
-
 def test_word_tokenizer():
     def tokenize(x):
         return [m.group(0) for m in common.WORD_TOKENIZER.finditer(x)]

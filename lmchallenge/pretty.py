@@ -1,8 +1,8 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Utility for pretty-printing the model performance from an LMChallenge
-log file, in ANSI colour or HTML format.
+'''Pretty-print the model performance from an LM Challenge log file,
+in ANSI colour or HTML format.
 '''
 
 import click
@@ -28,9 +28,9 @@ class Renderer:
         '''Called to render a token (which has not been "deselected") to the
         AnsiRender instance "out".
 
-        datum -- dict -- log datum to render
+        `datum` -- `dict` -- log datum to render
 
-        out -- common.AnsiRender -- output of rendering
+        `out` -- `lmchallenge.core.common.AnsiRender` -- output of rendering
         '''
         raise NotImplementedError
 
@@ -320,15 +320,14 @@ def _log_combined_score(data, model):
 
 # Toplevel rendering functions
 
-def render_ansi(data, render_token):
+def render_ansi(data, renderer):
     '''Render an LMC log to a colourized line-based output.
 
-    data -- a sequence of data from an LMC log
+    `data` -- `generator(dict)` -- LM Challenge log
 
-    render_token -- callable(datum, common.AnsiRender) to render a single token
-                    to the output AnsiRender
+    `renderer` -- `lmchallenge.pretty.Renderer` -- to render the log
 
-    returns -- a generator of ANSI-formatted lines
+    `return` -- `generator(string)` -- generates ANSI-formatted lines
     '''
     for _, msg_data in it.groupby(
             data, lambda d: (d.get('user'), d.get('message'))):
@@ -340,7 +339,7 @@ def render_ansi(data, render_token):
                     out.write(' ')
                 char_n = datum['character'] + len(datum['target'])
                 if common.is_selected(datum):
-                    render_token(datum, out)
+                    renderer(datum, out)
                 else:
                     out.color(out.BLUE, bold=False)
                     out.write(datum['target'])
@@ -351,14 +350,14 @@ def render_ansi(data, render_token):
 def render_html(data, renderer, float_format):
     '''Render an LMC log to a standalone (and mildly interactive) HTML file.
 
-    data -- a sequence of data from an LMC log
+    `data` -- `generator(dict)` -- LM Challenge log
 
-    renderer -- an instance of lmchallenge.pretty.Renderer
+    `renderer` -- `lmchallenge.pretty.Renderer` -- to render the log
 
-    float_format -- format string for floating point numbers in the resulting
-                    HTML file's compact JSON log
+    `float_format` -- `string` -- format string for floating point numbers in
+                      the resulting HTML file's compact JSON log
 
-    returns -- a single string containing the rendered HTML file
+    `return` -- `string` -- standalone HTML
     '''
     # Render the HTML file, with all dependencies inlined
     files = _get_viewer_files()
@@ -402,8 +401,11 @@ class OutputChoice(common.ParamChoice):
 
 
 def ansi(data, entropy_interval=10.0):
-    '''Convenience API for programatically generating ANSI-formatted pretty
-    output from logs.
+    '''Render and return an ANSI-formatted pretty-printing of a LM Challenge log.
+
+    `data` -- `iterable(dict)` -- LM Challenge log
+
+    `return` -- `iterable(string)` -- ANSI-coloured rendering of the log
     '''
     data = list(data)
     return render_ansi(
@@ -431,7 +433,7 @@ def ansi(data, entropy_interval=10.0):
               help='The format of floats in the JSON file (use compact'
               ' representations to save file size)')
 def cli(log, verbose, challenge, output, entropy_interval, float_format):
-    '''Pretty-print results from an LMChallenge game (using ANSI color codes).
+    '''Pretty-print results from LM Challenge (using ANSI color codes).
     '''
     common.verbosity(verbose)
 

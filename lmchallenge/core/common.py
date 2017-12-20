@@ -17,7 +17,7 @@ import itertools as it
 
 WORD_TOKENIZER = regex.compile(
     emoji.get_emoji_regexp().pattern +
-    """|[\p{L}\p{N}\p{Pc}\p{Pd}'@#]+|[\p{P}\p{S}]+"""
+    '''|[\p{L}\p{N}\p{Pc}\p{Pd}'@#]+|[\p{P}\p{S}]+'''
 )
 '''Our basic word tokenizer regex.'''
 
@@ -29,13 +29,12 @@ CHARACTER_TOKENIZER = regex.compile(
 
 
 def shell_docstring(command, name):
-    '''
-    Utility for creating docstrings:
+    '''Utility for creating docstrings:
 
       __doc__ += shell_docstring(cli, 'command-name')
     '''
     # Comment and indentation to recognize code segment
-    text = '\nCommand line:\n\n    #!sh'
+    text = '\n## `$ {}`\n\n    #!sh'.format(name)
     text += '\n    ' + click.Context(command, info_name=name) \
                             .get_help().replace('\n', '\n    ')
     text += '\n'
@@ -90,11 +89,12 @@ def not_closing(f):
 
 
 def auto_open(filename, mode='rt'):
-    '''Open a file, and return it (should be used in a ``with``).
+    '''Open a file, and return it (should be used in a `with`).
 
-    filename -- string -- path to a file (or gzip), or "-" for stdin/stdout
+    `filename` -- `string` -- path to a file (or gzip), or `"-"` for
+                  stdin/stdout
 
-    returns -- file object -- performing gzip decoding if appopriate
+    `return` -- `file` -- performing gzip decoding if appopriate
     '''
     if filename == '-':
         if 'r' in mode:
@@ -115,8 +115,8 @@ def load_jsonlines(filename):
     Note that this relies on the iterator being exhausted, or going out of
     scope, in order to close the file.
 
-    filename -- string -- path to a file (jsonlines, or gzipped jsonlines),
-                          or "-" for stdin.
+    `filename` -- `string` -- path to a file (jsonlines, or gzipped jsonlines),
+                  or `"-"` for stdin
     '''
     with auto_open(filename) as f:
         for line in f:
@@ -126,35 +126,14 @@ def load_jsonlines(filename):
 def dump_jsonlines(data, filename='-'):
     '''Dump data to stdout in jsonlines format.
 
-    data -- iterable of dict -- data to dump
+    `data` -- `iterable(dict)` -- data to dump
 
-    out -- stream/file -- destination to write
+    `filename` -- `string` -- destination to write (jsonlines, or gzipped
+                  jsonlines), or `"-"` for stdout
     '''
     with auto_open(filename, 'wt') as f:
         for d in data:
             f.write(json.dumps(d, sort_keys=True) + '\n')
-
-
-def zip_special(a, b):
-    '''A bit like Python's zip, except:
-      - Only works for "lengthable" 'a', 'b'.
-      - If either is length=0, treat it as a sequence of None.
-      - If either 'a' or 'b' is length=1, "broadcast" it to match the other.
-      - Fail if the lengths are not =0, =1, or matching.
-    '''
-    if len(a) == 0:
-        return zip(it.repeat(None), b)
-    elif len(b) == 0:
-        return zip(a, it.repeat(None))
-    elif len(a) == 1:
-        return zip(it.repeat(a[0]), b)
-    elif len(b) == 1:
-        return zip(a, it.repeat(b[0]))
-    elif len(a) == len(b):
-        return zip(a, b)
-    else:
-        raise ValueError("Length mismatch for zip_special: %d and %d"
-                         % (len(a), len(b)))
 
 
 def flatten_keys(d, separator='.'):
@@ -182,7 +161,15 @@ def rank(items, item, max_rank=None):
     returning None if the item is missing, where the first element is
     considered rank=1.
 
-    returns -- a rank >= 1, or None if the item was not found
+    `items` -- `list` -- to search through
+
+    `item` -- `any` -- target
+
+    `max_rank` -- `int` or `None` -- stop the search early at this rank;
+                  if not found, return `None`
+
+    `return` -- `int` or `None` -- `rank >= 1`, or `None` if the item was
+                not found
     '''
     try:
         stop = max_rank if max_rank is not None else len(items)
@@ -207,10 +194,10 @@ def peek(iterable):
     '''Get the first item out of an iterable, then reattach it, so you can
     dispatch based on the first item, then process all items.
 
-    iterable -- an iterable or collection of items (of any type)
+    `iterable` -- `iterable` -- an iterable or collection of items
 
-    returns -- (first_item, iterable) -- a pair of the first item, and an
-               iterable containing all items (including the first)
+    `return` -- `(object, iterable)` -- a pair (first_item, iterable)
+                where iterable contains all items (including the first)
     '''
     iterable = iter(iterable)
     try:
@@ -232,10 +219,11 @@ def is_selected(datum):
 def autodetect_input(data):
     '''Convert plain text input data to the dictionary-based format.
 
-    data -- either iterable of dictionaries or strings
+    `data` -- `iterable(dict)` or `iterable(string)`
 
-    returns -- iterable dict -- if `data` is plain strings, each dictionary is
-               {"text": line}, otherwise returns `data` unchanged
+    `return` -- `iterable(dict)` -- if `data` is plain strings, each
+                dictionary is `{"text": line}`, otherwise return `data`
+                unchanged
     '''
     first, data = peek(data)
     if isinstance(first, str):
@@ -252,7 +240,7 @@ def zip_combine(common_keys, dict_iterables):
     '''Combine a set of iterables, checking that they have identical values
     for `common_keys`, nesting any other keys under the iterable's name.
 
-    e.g. zip_combine(["n"], dict(x=xs, y=ys))
+    e.g. `zip_combine(["n"], dict(x=xs, y=ys))`
 
     | x              | y              | result                           |
     |----------------|----------------|----------------------------------|
@@ -260,12 +248,14 @@ def zip_combine(common_keys, dict_iterables):
     | {n:2, bar:"a"} | {n:2}          | {n:1, x:{bar:"a"}, y:{}}         |
     | {n:3, bar:"a"} | {n:4}          | throws ValueError                |
 
-    common_keys -- a list of keys that should be equal in the zipped dicts
+    `common_keys` -- `list(string)` -- a list of keys that should be equal
+                     in the zipped dicts
 
-    dict_iterables -- dict(name -> data) -- the iterables to be zipped together
+    `dict_iterables` -- `dict(string -> iterable)` -- the iterables to be
+                        zipped together with string names
 
-    returns -- lazy sequence of dict, where the keys =
-               common_keys + dict_iterables.keys()
+    `return` -- `generator(dict)` -- where the keys of each item are
+                `common_keys + dict_iterables.keys()`
     '''
     common_keys = set(common_keys)
     for items in zip(*dict_iterables.values()):
@@ -288,19 +278,20 @@ def zip_combine(common_keys, dict_iterables):
 
 
 def zip_logs(**data):
-    '''Zip a dictionary of LMChallenge logs together, failing if the logs
+    '''Zip a dictionary of LM Challenge logs together, failing if the logs
     don't "match up" (i.e. were generated from different source data).
 
     The keys that must match (user, character, message, token, target, select)
     are returned in the root element of each result, and the log-specific
     results are included under the name of that log.
 
-    data -- dict(name -> data) -- the logs to be zipped together
+    `data` -- `dict(string -> data)` -- named logs to be zipped together
 
-    returns -- lazy sequence of dict:
-               {"user", "character", "message", "token", "target", "select",
-               "log_1_name": {"logp"|"completions"|"results"...},
-               "log_2_name": {"logp"|"completions"|"results"...}}
+    `return` -- `generator(dict)` -- zipped logs:
+
+        {"user", "character", "message", "token", "target", "select",
+         "log_1_name": {"logp"|"completions"|"results"...},
+         "log_2_name": {"logp"|"completions"|"results"...}}
     '''
     return zip_combine(
         ["user", "character", "message", "token", "target", "select"],
@@ -329,11 +320,11 @@ class JsonParam(click.ParamType):
 
 
 class ParamChoice(click.ParamType):
-    '''Like ``click.Choice``, but looks up attributes on specific subclasses.
+    '''Like `click.Choice`, but looks up attributes on specific subclasses.
 
     To subclass, define:
-    ``name` - the descriptive name for the parameter
-    ``choices`` - a list of strings, each of which is a valid attr name
+    `name` - the descriptive name for the parameter
+    `choices` - a list of strings, each of which is a valid attr name
     '''
 
     def convert(self, value, param, ctx):
@@ -389,9 +380,11 @@ def single_log(logs):
     '''When using @click.argument('log', nargs=-1), this limits the log to zero
     (for stdin) or one log file.
 
-    logs -- a list of log files
+    `logs` -- `list(string)` -- a list of log file names
 
-    returns -- exactly one log file name
+    `return` -- `string` -- exactly one log file name
+
+    `raise` -- `ValueError` -- if more than one file is passed
     '''
     if len(logs) == 0:
         return '-'
@@ -403,7 +396,7 @@ def single_log(logs):
 
 def qualified_name(x):
     '''Return the qualified name of 'x' (including the module).
-    The format is: ``module.submodule:attr.subattr``.
+    The format is: `module.submodule:attr.subattr`.
     '''
     return '%s:%s' % (x.__module__, x.__qualname__)
 

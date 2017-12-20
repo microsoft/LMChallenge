@@ -1,4 +1,4 @@
-# Language Model Challenge (LMChallenge)
+# Language Model Challenge (LM Challenge)
 [![Build Status](https://travis-ci.com/Microsoft/LMChallenge.svg?token=PsuQKRDL8Qs6yfLsqpTp&branch=master)](https://travis-ci.com/Microsoft/LMChallenge)
 
 _A library & tools to evaluate predictive language models._ This is a guide for users of LM Challenge; you may also want to see:
@@ -18,13 +18,13 @@ Note: most of LM Challenge tools are word-based (although all can be applied to 
 
 ## Getting Started
 
-Install LMChallenge from the published Python package:
+Install LM Challenge from the published Python package:
 
     pip3 install --user lmchallenge
 
 (Or from this repository `python3 setup.py install --user`.)
 
-**Setup:** LMChallenge needs a model to evaluate. We include an example ngram model implementation in `sample`. Download data & build models (this may take a couple of minutes):
+**Setup:** LM Challenge needs a model to evaluate. We include an example ngram model implementation in `sample`. Download data & build models (this may take a couple of minutes):
 
     cd sample/
     ./prepare.sh
@@ -43,9 +43,9 @@ This produces start-of-line predictions, each with an attached score. To query w
     > predict<TAB>My favourite 
     of    0.0000    song    -1.0000    the    -2.0000...
 
-This provides next-word-prediction based on a context. There is more to the API (see [formats](doc/formats.md) for more details), but since you won't usually be using the API directly, let's move on to running LMChallenge over this model (so exit the predictor using `Ctrl+D`, back to your shell).
+This provides next-word-prediction based on a context. There is more to the API (see [formats](doc/formats.md) for more details), but since you won't usually be using the API directly, let's move on to running LM Challenge over this model (so exit the predictor using `Ctrl+D`, back to your shell).
 
-**Evaluation:** To run LMChallenge for this model, we'll pipe some text into `lmc run`, and save the result:
+**Evaluation:** To run LM Challenge for this model, we'll pipe some text into `lmc run`, and save the result:
 
     mkdir out
     head -n 10 data/wiki.test.tokens | lmc run "python3 ngram.py words data/words.3gram" wc > out/w3.wc.log
@@ -76,9 +76,9 @@ You should notice that capitalized words are (in this small, statistically insig
 **Other challenges:** Other games are run & inepected in a similar way, see `lmc run --help`.
 
 
-## Running LMChallenge
+## Running LM Challenge
 
-LMChallenge is quite flexible - it can be used in a variety of ways:
+LM Challenge is quite flexible - it can be used in a variety of ways:
 
  1. Command Line Interface
  2. Python API
@@ -86,7 +86,7 @@ LMChallenge is quite flexible - it can be used in a variety of ways:
 
 ### 1. Command Line Interface
 
-This is the simplest way of using LMChallenge, and works if your model is implemented in any language supporting piped stdout/stdin. See the [Getting Started](#getting-started) guide above, and the CLI help:
+This is the simplest way of using LM Challenge, and works if your model is implemented in any language supporting piped stdout/stdin. See the [Getting Started](#getting-started) guide above, and the CLI help:
 
     lmc --help
     lmc run --help

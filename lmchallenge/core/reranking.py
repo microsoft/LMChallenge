@@ -21,11 +21,11 @@ def jagged_matrix(values, n):
     '''Convert a jagged Python array to a matrix, replacing None & truncated
     values with -infinity.
 
-    values -- a list of 'V' lists, of maximum size 'n'
+    `values` -- `list(list(float))` -- a list of 'V' lists, of maximum size 'n'
 
-    n -- the number of columns in the result
+    `n` -- `int` -- the number of columns in the result
 
-    returns -- a (V, n) numpy array
+    `return` -- `array[V, n; float]` -- matrix containing `values`
     '''
     result = np.full((len(values), n), -np.inf, dtype=np.float32)
     for i, row in enumerate(values):
@@ -41,10 +41,11 @@ def count_correct(scores):
     although this is possibly a bit harsh (you could have achieved
     the correct via some arbitrary tie-breaking function).
 
-    scores -- array[N, C; float] -- scores of all terms, where scores[:, 0] are
-              the intended target's scores
+    `scores` -- `array[N, C; float]` -- scores of all terms, where
+                `scores[:, 0]` are the intended target's scores
 
-    returns -- number of correct (rank=1) results, in the range [0, N]
+    `return` -- `int` -- number of correct (rank=1) results
+                (in the range `[0, N]`)
     '''
     return int((scores[:, 0] > scores[:, 1:].max(axis=1)).sum())
 
@@ -60,11 +61,11 @@ class RerankingModel:
     def guess(cls, error, lm):
         '''Return the initial guess at a good set of arguments.
 
-        error -- array[N; float] -- example error scores
+        `error` -- `array[N; float]` -- example error scores
 
-        lm -- array[N; float] -- example language model scores
+        `lm` -- `array[N; float]` -- example language model scores
 
-        returns -- a dictionary {"arg_name": initial_value}
+        `return` -- `dict` -- `{"arg_name": initial_value}`
         '''
         raise NotImplementedError
 
@@ -76,13 +77,13 @@ class RerankingModel:
     def __call__(self, error, lm):
         '''Evaluate the reranking model for the given error & LM scores.
 
-        error -- array[*; float] -- error scores (any shape permitted)
+        `error` -- `array[*; float]` -- error scores (any shape permitted)
 
-        lm -- array[*; float] -- language model scores (any shape permitted,
-                                 but must match 'error')
+        `lm` -- `array[*; float]` -- language model scores (any shape
+                permitted, but must match `error`)
 
-        returns -- array[*; float] -- combined scores from the model (same
-                                      shape as error & lm)
+        `return` -- `array[*; float]` -- combined scores from the model (same
+                    shape as `error` & `lm`)
         '''
         raise NotImplementedError
 
@@ -90,7 +91,8 @@ class RerankingModel:
     def optimize(cls, error, lm):
         '''Optimize a reranking model for Hit@1 disambiguation.
 
-        returns -- an optimized model instance
+        `return` -- `lmchallenge.core.reranking.RerankingModel` --
+                    an optimized model instance
         '''
         guess = cls.guess(error=error, lm=lm)
 
@@ -111,10 +113,10 @@ class InterpolationRerankingModel(RerankingModel):
 
     Hyperparameters:
 
-        alpha -- how much to trust the language model
+        `alpha` -- `float` -- how much to trust the language model
 
-        beta -- the minimum contribution from the language model (e.g.
-                for protection against OOV)
+        `beta` -- `float` -- the minimum contribution from the language model
+                  (e.g. for protection against OOV)
     '''
     @classmethod
     def guess(cls, error, lm):

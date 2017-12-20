@@ -1,12 +1,12 @@
 # Copyright (c) Microsoft Corporation. All rights reserved.
 # Licensed under the MIT license.
 
-'''Check that logs confirm to the correct LMChallenge schema (expressed as a
+'''Check that logs confirm to the correct LM Challenge schema (expressed as a
 JSON schema - see [http://json-schema.org](http://json-schema.org)).
 
 This can be used to check that a method of generating log files other than
 `lmchallenge.run` (e.g. using your own parallel execution framework) is
-compatible with the LMChallenge analysis tools.
+compatible with the LM Challenge analysis tools.
 
 N.B. This validator can only check the format of the log, not the _fairness_ of
 the log. An example of an unfair log is a word entropy log where the total
@@ -24,7 +24,7 @@ from .core import common
 def schema():
     '''Returns the log instance schema as a Python object.
 
-    (Loaded from the schema definition file within the LMChallenge package.)
+    (Loaded from the schema definition file within the `lmchallenge` package.)
     '''
     with open(os.path.join(os.path.dirname(__file__), 'log.schema')) as f:
         return json.load(f)
@@ -49,7 +49,7 @@ def validate(data):
 @click.option('-v', '--verbose', default=0, count=True,
               help='How much human-readable detail to print to STDERR.')
 def cli(log, verbose):
-    '''Validate a log file against the standard LMChallenge schema.
+    '''Validate a log file against the standard LM Challenge schema.
     '''
     common.verbosity(verbose)
 

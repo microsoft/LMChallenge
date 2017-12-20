@@ -30,13 +30,13 @@ implement, see `lmchallenge.Model` or `lmchallenge.WordModel`).
 
     >>> my_model = MyModel(n_predictions=3)
 
-    # This is the core LMChallenge API - 'predict'
+    # This is the core LM Challenge API - 'predict'
     >>> my_model.predict('', None)
     [('one', -1), ('two', -2), ('three', -3)]
     >>> my_model.predict('This is ', ['foo', 'a', 'brilliant'])
     [('foo', -3), ('a', -1), ('brilliant', -9)]
 
-To evaluate this model with LMChallenge, we select a challenge -
+To evaluate this model with LM Challenge, we select a challenge -
 for example word completion (`wc`), which measures next-word-prediction
 hit rate and word completion statistics.
 
@@ -45,7 +45,7 @@ hit rate and word completion statistics.
     >>> [x['target'] for x in log]
     ['one', 'potato', 'two', 'potato', 'three']
 
-We now have a _log_ object, which is the core data type of LMChallenge. Here
+We now have a _log_ object, which is the core data type of LM Challenge. Here
  are a few things you can do with logs:
 
     #!python
@@ -128,7 +128,7 @@ __all__ = [
 
 @click.group()
 def cli():
-    '''The main entry point to LMChallenge.
+    '''The main entry point to LM Challenge.
     Use subcommands to perform specific tasks.
     '''
     pass
