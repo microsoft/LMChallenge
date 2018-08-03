@@ -36,15 +36,15 @@ class RenderCompletion:
     def __call__(self, datum, out):
         base = self.ntyped(datum['target'], datum['baseline']['completions'])
         ntyped = self.ntyped(datum['target'], datum['log']['completions'])
+        n = min(base, ntyped)
+        out.color(out.BLACK, bold=False)
+        out.write(datum['target'][:n])
         if base < ntyped:
             out.color(out.RED, bold=True)
         elif ntyped < base:
             out.color(out.GREEN, bold=True)
         else:
             out.color(out.DEFAULT, bold=False)
-        n = min(base, ntyped)
-        out.write(datum['target'][:n])
-        out.color(out.BLACK, bold=False)
         out.write(datum['target'][n:])
 
 
