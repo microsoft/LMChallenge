@@ -31,19 +31,69 @@ For quicker tests, while developing, try `./scripts/run test`.
 
 ## Publishing
 
+### Configure gpg for signing the release
+
+- Install [gpg](https://gnupg.org) (e.g. `brew install gpg` on macOS)
+- Obtain the private key for the release and its password (ask around)
+- Import the key into your keyring:
+  ```bash
+    gpg --allow-secret-key-import --import private.key
+  ```
+- Ensure the key has been imported:
+  ```bash
+    gpg --list-keys
+  ```
+  Expected output:
+  ```
+    pub   rsa2048 2017-10-06 [SC]
+          EA7AC0CCA097C391C7AA61F109F7AFCBCB48AC15
+    uid           [ unknown] SwiftKey DL&NLP <swiftkey-deep@service.microsoft.com>
+    sub   rsa2048 2017-10-06 [E]
+  ```
+
+  The key fingerprint is `EA7A C0CC A097 C391 C7AA 61F1 09F7 AFCB CB48 AC15`
+
+### Configure PyPi access
+
+In your `~/.pypirc` specify:
+
+```
+[distutils]
+index-servers =
+    pypi
+    testpypi
+
+[pypi]
+repository: https://upload.pypi.org/legacy/
+username: USERNAME
+password: PASSWORD
+
+[testpypi]
+repository: https://test.pypi.org/legacy/
+username: USERNAME
+password: PASSWORD
+```
+
+Install `twine` for the current user
+
+```bash
+python3 -m pip install --user twine
+```
+
+### Publish a new release
+
  1. (optionally) update requirements `./scripts/run -i base build --no-cache && ./scripts/run -i base refreeze`
  2. run the pre-publish checks `./scripts/run check`
  3. check that you're happy with `version.txt`
- 4. `python3 setup.py sdist upload -r pypi` (you must first set up pypi in `~/.pypirc`, as below & provide GPG credentials with `gpg --import`)
+ 4. `rm -rf dist || true` to cleanup previously created artefacts
+ 5. `python3 setup.py sdist` to package a new release
+ 6. `twine upload --sign --identity "swiftkey-deep@" -r testpypi dist/*` to upload the release to TEST PyPi server
+ 7. Check the new release on test.pypi.org
+ 8. You can download release files and verify the signature via 
     ```
-    [distutils]
-    index-servers =
-        pypi
-
-    [pypi]
-    repository: https://upload.pypi.org/legacy/
-    username: USERNAME
-    password: PASSWORD
+    gpg --verify lmchallenge-$(cat version.txt).tar.gz.asc lmchallenge-$(cat version.txt).tar.gz
     ```
- 5. `git push origin HEAD:refs/tags/$(cat version.txt)`
- 6. update, commit & push `version.txt`
+ 9. `twine upload --sign --identity "swiftkey-deep@" -r pypi dist/*` to upload the release to MAIN PyPi server at https://pypi.org
+ 9. `git push origin HEAD:refs/tags/$(cat version.txt)` to push the new release tag to Github
+ 10. Go to Github and create a release for the tag you've just pushed
+ 11. update, commit & push `version.txt` to start a new version

@@ -14,6 +14,7 @@ setup(name='lmchallenge',
       description='LM Challenge'
       ' - A library & tools to evaluate predictive language models.',
       long_description=readme,
+      long_description_content_type="text/markdown",
 
       url='https://github.com/Microsoft/LMChallenge',
       author='Microsoft Corporation',
