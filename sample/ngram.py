@@ -349,7 +349,7 @@ if __name__ == '__main__':
     s = subparsers.add_parser('words',
                               help='start a character model predictor')
     s.add_argument('ngrams', help='file path to ngrams dataset')
-    s.add_argument('-n', '--n-predictions', default=100,
+    s.add_argument('-n', '--n-predictions', default=100, type=int,
                    help='number of predictions to return')
     s.add_argument('-w', '--weights', nargs='+', type=float,
                    default=[1, 2, 2],
