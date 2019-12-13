@@ -21,6 +21,7 @@ setup(name='lmchallenge',
       license='MIT',
 
       packages=['lmchallenge', 'lmchallenge.core'],
+      include_package_data=True,
       install_requires=requirements,
       entry_points='''
       [console_scripts]
