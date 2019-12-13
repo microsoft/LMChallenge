@@ -1,5 +1,4 @@
 # Language Model Challenge (LM Challenge)
-[![Build Status](https://travis-ci.com/Microsoft/LMChallenge.svg?token=PsuQKRDL8Qs6yfLsqpTp&branch=master)](https://travis-ci.com/Microsoft/LMChallenge)
 
 _A library & tools to evaluate predictive language models._ This is a guide for users of LM Challenge; you may also want to see:
 
